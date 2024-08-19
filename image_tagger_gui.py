@@ -68,26 +68,28 @@ def process_image(image_path, model):
 
         content = response.content[0].text if response.content else None
         
-        if content is None:
-            raise ValueError("No text content found in the response")
+        if not content:
+            return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"]}
 
-        image_data = json.loads(content)
+        try:
+            image_data = json.loads(content)
+        except json.JSONDecodeError:
+            return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"]}
 
         if 'title' not in image_data or 'tags' not in image_data:
-            raise ValueError("Invalid response format: missing 'title' or 'tags'")
+            return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"]}
 
         write_metadata(image_path, image_data['title'], image_data['tags'])
         return image_path, image_data
     except Exception as e:
         print(f"Error processing {image_path}: {str(e)}")
-        return image_path, None
+        return image_path, {"title": "Error Processing Image", "tags": ["error"]}
 
 def write_metadata(file_path, title, keywords):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             
-            # EXIF metadata
             exif_dict = piexif.load(file_path)
             
             exif_dict['0th'][piexif.ImageIFD.XPTitle] = title.encode('utf-16le')
@@ -105,12 +107,11 @@ def write_metadata(file_path, title, keywords):
             exif_bytes = piexif.dump(exif_dict)
             piexif.insert(exif_bytes, file_path)
 
-        # IPTC metadata using pyexiv2
         with pyexiv2.Image(file_path) as img:
             img.modify_iptc({'Iptc.Application2.ObjectName': title})
             img.modify_iptc({'Iptc.Application2.Keywords': keywords})
 
-        print(f"Metadata (EXIF and IPTC) added to {file_path}")
+        print(f"Metadata added to {file_path}")
     except Exception as e:
         print(f"Error attaching metadata to {file_path}: {str(e)}")
 
@@ -131,7 +132,7 @@ class ImageTaggerApp:
             "claude-3-5-sonnet-20240620"
         ]
         self.selected_model = tk.StringVar()
-        self.selected_model.set(self.models[0])  # Default to claude-3-haiku-20240307
+        self.selected_model.set(self.models[0])
         
         self.max_workers = tk.IntVar(value=10)
         
