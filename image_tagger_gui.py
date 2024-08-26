@@ -3,6 +3,7 @@ import base64
 import json
 import io
 from PIL import Image
+from PIL import PngImagePlugin
 import anthropic
 import concurrent.futures
 import piexif
@@ -16,6 +17,7 @@ import tkinter.messagebox as messagebox
 from collections import deque
 import warnings
 import textwrap
+import shutil
 
 def load_api_key(file_path='api_key.txt'):
     try:
@@ -35,16 +37,31 @@ if not API_KEY:
 client = anthropic.Anthropic(api_key=API_KEY)
 
 def get_thumbnail(image_path, max_size=(800, 800)):
-    with Image.open(image_path) as img:
-        img.thumbnail(max_size)
-        buffered = io.BytesIO()
-        img.save(buffered, format="JPEG")
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    try:
+        with Image.open(image_path) as img:
+            # Convert RGBA images to RGB
+            if img.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'RGBA':
+                    background.paste(img, mask=img.split()[3])  # 3 is the alpha channel
+                else:
+                    background.paste(img, mask=img.split()[1])  # 1 is the alpha channel for LA mode
+                img = background
+
+            img.thumbnail(max_size)
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=85)
+            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    except Exception as e:
+        print(f"Error creating thumbnail for {image_path}: {str(e)}")
+        return None
 
 def process_image(image_path, model, authors):
     try:
         base64_thumbnail = get_thumbnail(image_path)
-        
+        if base64_thumbnail is None:
+            return image_path, {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
+    
         response = client.messages.create(
             model=model,
             max_tokens=1000,
@@ -81,44 +98,87 @@ def process_image(image_path, model, authors):
             return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
 
         image_data['authors'] = authors
-        write_metadata(image_path, image_data['title'], image_data['tags'], image_data['authors'])
-        return image_path, image_data
+        new_image_path = write_metadata(image_path, image_data['title'], image_data['tags'], image_data['authors'])
+        return new_image_path, image_data
     except Exception as e:
         print(f"Error processing {image_path}: {str(e)}")
         return image_path, {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
     
 def write_metadata(file_path, title, keywords, authors):
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            
-            exif_dict = piexif.load(file_path)
-            
-            exif_dict['0th'][piexif.ImageIFD.XPTitle] = title.encode('utf-16le')
-            exif_dict['0th'][piexif.ImageIFD.ImageDescription] = title.encode('utf-8')
-            exif_dict['0th'][piexif.ImageIFD.XPAuthor] = authors.encode('utf-16le')
-            
-            keywords_str = ', '.join(keywords)
-            exif_dict['0th'][piexif.ImageIFD.XPKeywords] = keywords_str.encode('utf-16le')
-            
-            iptc_data = {
-                'title': title,
-                'keywords': keywords,
-                'authors': authors
-            }
-            exif_dict['Exif'][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(json.dumps(iptc_data), encoding="unicode")
-            
-            exif_bytes = piexif.dump(exif_dict)
-            piexif.insert(exif_bytes, file_path)
+        # Create a 'tagged' folder in the same directory as the original file
+        original_dir = os.path.dirname(file_path)
+        tagged_dir = os.path.join(original_dir, "tagged")
+        os.makedirs(tagged_dir, exist_ok=True)
 
-        with pyexiv2.Image(file_path) as img:
-            img.modify_iptc({'Iptc.Application2.ObjectName': title})
-            img.modify_iptc({'Iptc.Application2.Keywords': keywords})
-            img.modify_iptc({'Iptc.Application2.Writer': authors})
+        # Generate new file path in the 'tagged' folder
+        base_name = os.path.basename(file_path)
+        new_file_path = os.path.join(tagged_dir, base_name)
 
-        print(f"Metadata added to {file_path}")
+        # Copy the original file to the new location
+        shutil.copy2(file_path, new_file_path)
+
+        # Check if the file is PNG
+        if new_file_path.lower().endswith('.png'):
+            # For PNG, we'll use PIL's PngImagePlugin
+            im = Image.open(new_file_path)
+            meta = PngImagePlugin.PngInfo()
+
+            # Add metadata as text chunks
+            meta.add_text("Title", title)
+            meta.add_text("Author", authors)
+            meta.add_text("Keywords", ", ".join(keywords))
+            meta.add_text("Description", title)  # Using title as description as well
+
+            # Save the image with new metadata
+            im.save(new_file_path, "PNG", pnginfo=meta)
+
+            # Additionally, use pyexiv2 for XMP metadata (more standardized)
+            with pyexiv2.Image(new_file_path) as img:
+                img.modify_xmp({
+                    'Xmp.dc.title': title,
+                    'Xmp.dc.description': title,
+                    'Xmp.dc.creator': authors,
+                    'Xmp.dc.subject': keywords
+                })
+
+        else:
+            # For JPEG and other supported formats, use both piexif and pyexiv2
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                exif_dict = piexif.load(new_file_path)
+                
+                exif_dict['0th'][piexif.ImageIFD.XPTitle] = title.encode('utf-16le')
+                exif_dict['0th'][piexif.ImageIFD.ImageDescription] = title.encode('utf-8')
+                exif_dict['0th'][piexif.ImageIFD.XPAuthor] = authors.encode('utf-16le')
+                
+                keywords_str = ', '.join(keywords)
+                exif_dict['0th'][piexif.ImageIFD.XPKeywords] = keywords_str.encode('utf-16le')
+                
+                iptc_data = {
+                    'title': title,
+                    'keywords': keywords,
+                    'authors': authors
+                }
+                exif_dict['Exif'][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(json.dumps(iptc_data), encoding="unicode")
+                
+                exif_bytes = piexif.dump(exif_dict)
+                piexif.insert(exif_bytes, new_file_path)
+
+            with pyexiv2.Image(new_file_path) as img:
+                img.modify_iptc({
+                    'Iptc.Application2.ObjectName': title,
+                    'Iptc.Application2.Keywords': keywords,
+                    'Iptc.Application2.Writer': authors
+                })
+
+        print(f"Metadata added to {new_file_path}")
+        return new_file_path
+
     except Exception as e:
         print(f"Error attaching metadata to {file_path}: {str(e)}")
+        return file_path
 
 class ImageTaggerApp:
     def __init__(self, master):
@@ -404,8 +464,25 @@ class ImageTaggerApp:
                         f.cancel()
                     break
                 
-                image_path, result = future.result()
-                self.update_image_list(image_path, result)
+                new_image_path, result = future.result()
+                original_filename = os.path.basename(new_image_path)
+                
+                if result:
+                    status = "Success"
+                    self.update_output(f"Processed {original_filename}: {result['title']}")
+                else:
+                    status = "Error"
+                    self.update_output(f"Failed to process {original_filename}")
+                
+                # Update the image_list with the new status and result
+                if original_filename in self.image_list:
+                    self.image_list[original_filename].update({
+                        "status": status,
+                        "title": result.get('title', ''),
+                        "tags": ", ".join(result.get('tags', [])),
+                        "authors": result.get('authors', '')
+                    })
+                    self.master.after(0, self._update_tree_item, original_filename)
                 
                 self.processed_images += 1
                 self.progress['value'] = self.processed_images
@@ -441,12 +518,9 @@ class ImageTaggerApp:
                     continue
             
             try:
-                result = process_image(image_path, model, self.authors.get())
+                new_image_path, result = process_image(image_path, model, self.authors.get())
                 self.request_times.append(time.time())
-                if isinstance(result, tuple) and len(result) == 2:
-                    return result
-                else:
-                    return image_path, result
+                return new_image_path, result
             except Exception as e:
                 if "rate_limit_error" in str(e):
                     self.update_output("Rate limit hit, waiting for 60 seconds...")
