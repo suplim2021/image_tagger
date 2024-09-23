@@ -269,13 +269,13 @@ class ImageTaggerApp:
         self.tree.column("#0", width=130, stretch=tk.NO)  # Reduced width for thumbnails
         
         self.tree.heading("filename", text="Filename")
-        self.tree.column("filename", width=200, stretch=tk.YES)
+        self.tree.column("filename", width=150, stretch=tk.YES)
         
         self.tree.heading("title", text="Title")
         self.tree.column("title", width=150, stretch=tk.YES)
         
         self.tree.heading("tags", text="Tags")
-        self.tree.column("tags", width=200, stretch=tk.YES)
+        self.tree.column("tags", width=180, stretch=tk.YES)
         
         self.tree.heading("authors", text="Authors")
         self.tree.column("authors", width=80, stretch=tk.NO)
@@ -339,11 +339,17 @@ class ImageTaggerApp:
             item = self.tree.identify_row(event.y)
             column = self.tree.identify_column(event.x)
             if item and column:
-                column_index = int(column[1:]) - 1  # Convert #1, #2, etc. to 0, 1, etc.
+                column_name = self.tree.heading(column)['text']
                 values = self.tree.item(item)['values']
-                if values and len(values) > column_index:
-                    value = values[column_index]
-                    self.tooltip_id = self.master.after(500, lambda: create_tooltip(event, value))
+                if column == '#0':  # Thumbnail column
+                    value = f"Filename: {values[0]}"
+                else:
+                    column_index = int(column[1:]) - 1
+                    if column_index < len(values):
+                        value = f"{column_name}: {values[column_index]}"
+                    else:
+                        value = "N/A"
+                self.tooltip_id = self.master.after(500, lambda: create_tooltip(event, value))
 
         def create_tooltip(event, value):
             x = event.x_root + 15
@@ -686,7 +692,7 @@ class ImageTaggerApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.geometry("960x700")  # Increased size to accommodate thumbnails
+    root.geometry("800x600")  # Adjust to more compact
     root.resizable(True, True)  # Allow resizing
     app = ImageTaggerApp(root)
     root.mainloop()
