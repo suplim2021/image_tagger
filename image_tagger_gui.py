@@ -386,8 +386,7 @@ class ImageTaggerApp:
         if folder_selected:  # Check if a folder was actually selected
             self.folder_path.set(folder_selected)
             self.reset_state()
-            self.clear_tree()
-            self.update_output(f"Selected folder: {folder_selected}")
+            self.load_files()  # Load files after selecting the folder
     
     def reset_state(self):
         self.is_processing = False
@@ -398,8 +397,6 @@ class ImageTaggerApp:
         self.error_count = 0
         self.start_time = None
         self.request_times.clear()
-        self.image_list.clear()
-        self.current_index = 1
         
         # Reset GUI elements
         self.progress['value'] = 0
@@ -409,6 +406,33 @@ class ImageTaggerApp:
         self.pause_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.DISABLED)
         self.status_bar.config(text="")
+    
+    def load_files(self):
+        folder_path = self.folder_path.get()
+        image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'))]
+        self.total_images = len(image_files)
+        
+        self.clear_tree()
+        self.image_list.clear()
+        self.current_index = 1
+        
+        for filename in image_files:
+            full_path = os.path.join(folder_path, filename)
+            thumbnail = self.get_thumbnail(full_path)
+            self.image_list[filename] = {
+                "index": self.current_index, 
+                "status": "Loaded", 
+                "title": "", 
+                "tags": "", 
+                "authors": ""
+            }
+            self.tree.insert("", "end", iid=str(self.current_index), 
+                            image=thumbnail, 
+                            values=(filename, "", "", ""))
+            self.current_index += 1
+        
+        self.update_stats()
+        self.update_output(f"Loaded {self.total_images} images")
 
     def clear_tree(self):
         for item in self.tree.get_children():
@@ -419,15 +443,16 @@ class ImageTaggerApp:
             self.update_output("Please select a folder first.")
             return
         
-        self.clear_tree()  # Clear the tree before starting new processing
-        self.reset_state()  # Reset the state before starting new processing
-        
         self.is_processing = True
         self.is_paused = False
         self.pause_event.set()
         self.start_button.config(state=tk.DISABLED)
         self.pause_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.NORMAL)
+        self.progress['value'] = 0
+        self.processed_images = 0
+        self.ok_count = 0
+        self.error_count = 0
         
         threading.Thread(target=self.process_images, daemon=True).start()
     
@@ -470,22 +495,13 @@ class ImageTaggerApp:
 
     def process_images(self):
         folder_path = self.folder_path.get()
-        image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'))]
-        self.total_images = len(image_files)
-        
         self.progress['maximum'] = self.total_images
-        self.update_counter()
+        self.update_stats()
         
         self.start_time = time.time()
         
-        # Populate the list with "Load" status
-        for filename in image_files:
-            self.image_list[filename] = {"index": self.current_index, "status": "Load", "title": "", "tags": "", "authors": ""}
-            self.master.after(0, self._update_tree_item, filename)
-            self.current_index += 1
-        
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers.get()) as executor:
-            futures = {executor.submit(self.process_image_with_rate_limit, os.path.join(folder_path, filename), self.selected_model.get()): filename for filename in image_files}
+            futures = {executor.submit(self.process_image_with_rate_limit, os.path.join(folder_path, filename), self.selected_model.get()): filename for filename in self.image_list}
             
             for future in concurrent.futures.as_completed(futures):
                 if not self.is_processing:
@@ -506,9 +522,11 @@ class ImageTaggerApp:
                 if result:
                     status = "Success"
                     self.update_output(f"Processed {original_filename}: {result['title']}")
+                    self.ok_count += 1
                 else:
                     status = "Error"
                     self.update_output(f"Failed to process {original_filename}")
+                    self.error_count += 1
                 
                 # Update the image_list with the new status and result
                 if original_filename in self.image_list:
@@ -522,7 +540,7 @@ class ImageTaggerApp:
                 
                 self.processed_images += 1
                 self.progress['value'] = self.processed_images
-                self.update_counter()
+                self.update_stats()
                 self.update_time_estimate()
                 self.master.update_idletasks()
         
@@ -609,54 +627,6 @@ class ImageTaggerApp:
         self.tree.tag_configure("Error", background="light coral")
         self.tree.tag_configure("Load", background="white")
         self.tree.item(str(item['index']), tags=(item['status'],))
-
-    def process_images(self):
-        folder_path = self.folder_path.get()
-        image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'))]
-        self.total_images = len(image_files)
-        
-        self.progress['maximum'] = self.total_images
-        self.update_stats()
-        
-        self.start_time = time.time()
-        
-        # Populate the list with "Load" status and thumbnails
-        for filename in image_files:
-            self.image_list[filename] = {"index": self.current_index, "status": "Load", "title": "", "tags": "", "authors": ""}
-            self.master.after(0, self._update_tree_item, filename)
-            self.current_index += 1
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers.get()) as executor:
-            futures = {executor.submit(self.process_image_with_rate_limit, os.path.join(folder_path, filename), self.selected_model.get()): filename for filename in image_files}
-            
-            for future in concurrent.futures.as_completed(futures):
-                if not self.is_processing:
-                    for f in futures:
-                        f.cancel()
-                    break
-                
-                self.pause_event.wait()
-                
-                if not self.is_processing:
-                    for f in futures:
-                        f.cancel()
-                    break
-                
-                image_path, result = future.result()
-                self.update_image_list(image_path, result)
-                
-                self.processed_images += 1
-                self.progress['value'] = self.processed_images
-                self.update_stats()
-                self.update_time_estimate()
-                self.master.update_idletasks()
-        
-        self.is_processing = False
-        self.start_button.config(state=tk.NORMAL)
-        self.pause_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.DISABLED)
-        self.update_output("Processing complete.")
-        self.show_completion_message()
     
     def update_stats(self):
         self.stats_label.config(text=f"Progress: {self.processed_images}/{self.total_images} | Success: {self.ok_count} | Error: {self.error_count}")
