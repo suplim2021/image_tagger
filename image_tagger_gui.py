@@ -2,7 +2,7 @@ import os
 import base64
 import json
 import io
-from PIL import Image
+from PIL import Image, ImageTk
 from PIL import PngImagePlugin
 import anthropic
 import concurrent.futures
@@ -214,6 +214,9 @@ class ImageTaggerApp:
         
         self.create_widgets()
         self.reset_state()
+
+        self.thumbnail_size = (50, 50)  # Size for thumbnails
+        self.thumbnail_cache = {}  # Cache to store thumbnails
     
     def create_widgets(self):
         # Add padding to the top section
@@ -258,29 +261,41 @@ class ImageTaggerApp:
         self.time_label = tk.Label(progress_frame, text="Estimated: --:--:--")
         self.time_label.pack(side=tk.LEFT, padx=5)
         
-        columns = ("No.", "Status", "File Name", "Title", "Tags", "Authors")
-        self.tree = ttk.Treeview(self.master, columns=columns, show="headings")
-        for col in columns:
-            self.tree.heading(col, text=col)
+        columns = ("filename", "title", "tags", "authors")
+        self.tree = ttk.Treeview(self.master, columns=columns, show="tree headings", height=15)
         
-         # Add a default row to prevent errors when no folder is selected
-        self.tree.insert("", "end", values=("", "", "No folder selected", "", "", ""))
+        # Configure columns
+        self.tree.heading("#0", text="Thumbnail")
+        self.tree.column("#0", width=130, stretch=tk.NO)  # Reduced width for thumbnails
         
-        # Adjust column widths
-        self.tree.column("No.", width=30, stretch=tk.NO)
-        self.tree.column("Status", width=50, stretch=tk.NO)
-        self.tree.column("File Name", width=100, stretch=tk.YES)
-        self.tree.column("Title", width=100, stretch=tk.YES)
-        self.tree.column("Tags", width=150, stretch=tk.YES)
-        self.tree.column("Authors", width=70, stretch=tk.NO)
+        self.tree.heading("filename", text="Filename")
+        self.tree.column("filename", width=200, stretch=tk.YES)
+        
+        self.tree.heading("title", text="Title")
+        self.tree.column("title", width=150, stretch=tk.YES)
+        
+        self.tree.heading("tags", text="Tags")
+        self.tree.column("tags", width=200, stretch=tk.YES)
+        
+        self.tree.heading("authors", text="Authors")
+        self.tree.column("authors", width=80, stretch=tk.NO)
         
         self.tree.grid(row=2, column=0, columnspan=3, padx=20, pady=10, sticky="nsew")
         
-        # Vertical scrollbar
-        v_scrollbar = ttk.Scrollbar(self.master, orient="vertical", command=self.tree.yview)
-        v_scrollbar.grid(row=2, column=3, sticky="ns")
-        self.tree.configure(yscrollcommand=v_scrollbar.set)
-                
+        # Set a custom row height
+        style = ttk.Style()
+        style.configure('Treeview', rowheight=70)  # Adjust row height
+        
+        # Add scrollbars
+        vsb = ttk.Scrollbar(self.master, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(self.master, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.grid(row=2, column=3, sticky="ns")
+        hsb.grid(row=3, column=0, columnspan=3, sticky="ew")
+        
+        # Add a default row to prevent errors when no folder is selected
+        self.tree.insert("", "end", values=("", "", "No folder selected", "", "", "", ""))
+        
         # Configure row and column weights
         self.master.grid_rowconfigure(2, weight=1)
         self.master.grid_columnconfigure(1, weight=1)
@@ -289,10 +304,6 @@ class ImageTaggerApp:
         self.status_bar = tk.Label(self.master, text="", bd=1, relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.grid(row=4, column=0, columnspan=4, sticky="ew")
 
-        # Configure row and column weights
-        self.master.grid_rowconfigure(2, weight=1)
-        self.master.grid_columnconfigure(1, weight=1)
-
         # Add tooltips
         self.add_tooltips()
 
@@ -300,6 +311,25 @@ class ImageTaggerApp:
         # self.output_text = tk.Text(self.master, height=5, width=60)
         # self.output_text.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
     
+    def get_thumbnail(self, image_path):
+        if image_path in self.thumbnail_cache:
+            return self.thumbnail_cache[image_path]
+        
+        try:
+            with Image.open(image_path) as img:
+                # Set a fixed height and calculate width to maintain aspect ratio
+                fixed_height = 50  # Reduced height (50% of previous 100)
+                aspect_ratio = img.width / img.height
+                new_width = int(fixed_height * aspect_ratio)
+                
+                img = img.resize((new_width, fixed_height), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                self.thumbnail_cache[image_path] = photo
+                return photo
+        except Exception as e:
+            print(f"Error creating thumbnail for {image_path}: {str(e)}")
+            return self.get_default_thumbnail()
+
     def add_tooltips(self):
         self.tooltip = None
         self.tooltip_id = None
@@ -559,12 +589,15 @@ class ImageTaggerApp:
 
     def _update_tree_item(self, filename):
         item = self.image_list[filename]
-        values = (item['index'], item['status'], filename, item['title'], item['tags'], item['authors'])
+        full_path = os.path.join(self.folder_path.get(), filename)
+        thumbnail = self.get_thumbnail(full_path)
+        
+        values = (filename, item['title'], item['tags'], item['authors'])
         
         if self.tree.exists(str(item['index'])):
-            self.tree.item(str(item['index']), values=values)
+            self.tree.item(str(item['index']), image=thumbnail, values=values)
         else:
-            self.tree.insert("", "end", iid=str(item['index']), values=values)
+            self.tree.insert("", "end", iid=str(item['index']), image=thumbnail, values=values)
         
         self.tree.tag_configure("Success", background="light green")
         self.tree.tag_configure("Error", background="light coral")
@@ -581,7 +614,7 @@ class ImageTaggerApp:
         
         self.start_time = time.time()
         
-        # Populate the list with "Load" status
+        # Populate the list with "Load" status and thumbnails
         for filename in image_files:
             self.image_list[filename] = {"index": self.current_index, "status": "Load", "title": "", "tags": "", "authors": ""}
             self.master.after(0, self._update_tree_item, filename)
@@ -653,7 +686,7 @@ class ImageTaggerApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.geometry("700x400")  # Increased size to accommodate the new layout
-    root.resizable(False, False)
+    root.geometry("960x700")  # Increased size to accommodate thumbnails
+    root.resizable(True, True)  # Allow resizing
     app = ImageTaggerApp(root)
     root.mainloop()
