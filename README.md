@@ -1,6 +1,8 @@
 ﻿# Image Tagger
 
-Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF and IPTC) to each image file.
+Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
+
+## Version 1.2.2
 
 ## Authorship Note
 
@@ -8,15 +10,17 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 
 ## Features
 
-- Bulk image processing (now including PNG support)
-- Automatic title and tag generation using AI
-- Metadata (EXIF and IPTC) insertion
-- User-friendly GUI for easy interaction
+- Bulk image processing (including PNG, JPG, JPEG, TIFF, BMP, and GIF support)
+- Automatic title and 49 tag generation using AI
+- Metadata (EXIF, IPTC, and XMP) insertion
+- User-friendly GUI with thumbnail previews
 - Pause and resume functionality
 - Progress tracking and time estimation
 - Support for multiple Claude model versions
 - New "tagged" folder for processed images, preserving originals
 - Improved error handling and rate limiting
+- Tooltips for detailed information
+- Alternating row colors in the file list for better readability
 
 ## Prerequisites
 
@@ -33,7 +37,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 
 2. Install the required Python packages:
    ```
-   pip install anthropic pillow piexif pyexiv2 tkinter
+   pip install anthropic pillow piexif pyexiv2
    ```
 
 3. Create a file named `api_key.txt` in the root directory and paste your Anthropic API key into it.
@@ -52,7 +56,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
    - Add author information
    - Start, pause, and stop processing
 
-3. The application will process each image, generating a title and tags, and adding this information as metadata to the image files in a new "tagged" folder.
+3. The application will process each image, generating a title and 49 tags, and adding this information as metadata to the image files in a new "tagged" folder.
 
 ## Configuration
 
