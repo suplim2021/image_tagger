@@ -64,7 +64,7 @@ def process_image(image_path, model, authors):
             model=model,
             max_tokens=1000,
             temperature=0,
-            system="You are a popular AdobeStock contributor. Analyze the image and provide a title and exactly 49 tags that suit Adobe Stock. Sort the tags by relevance. Use simplest words to describe the title and tags in detail. (example; people, age, races, gender, color, action and etc.)(title examples; 50 years old Muscular Dad Male Focused sport jersey Runner in Action) Format your response as a JSON object with 'title' and 'tags' keys. The 'tags' should be an array of strings.",
+            system="You are a popular AdobeStock contributor. Analyze the image and generate a title and exactly 49 relevant tags optimized for Adobe Stock. Use simple, clear, and searchable words. Sort tags by relevance, focusing on the subject’s appearance, clothing, action, setting, and mood. Avoid repetition and ensure the tags cover key aspects like gender, age, ethnicity (if clear), posture, accessories, and environment. Format the response as a JSON object with 'title' and 'tags' keys.",
             messages=[
                 {
                     "role": "user",
