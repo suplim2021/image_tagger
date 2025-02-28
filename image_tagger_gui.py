@@ -169,6 +169,7 @@ class ImageTaggerApp:
         self.error_count = 0
         
         self.models = [
+            "claude-3-7-sonnet-latest",
             "claude-3-haiku-20240307",
             "claude-3-5-haiku-latest",
             "claude-3-sonnet-20240229",
