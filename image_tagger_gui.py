@@ -17,7 +17,6 @@ import tkinter.messagebox as messagebox
 from collections import deque
 import warnings
 import textwrap
-import shutil
 import time
 
 VERSION = "1.2.2"
@@ -96,20 +95,16 @@ def process_image(image_path, model, authors):
             return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
 
         image_data['authors'] = authors
-        new_image_path = write_metadata(image_path, image_data['title'], image_data['tags'], image_data['authors'])
-        return new_image_path, image_data
+        updated_image_path = write_metadata(image_path, image_data['title'], image_data['tags'], image_data['authors'])
+        return updated_image_path, image_data
     except Exception as e:
         print(f"Error processing {image_path}: {str(e)}")
         return image_path, {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
 
 def write_metadata(file_path, title, keywords, authors):
+    """Embed metadata directly into the given image file."""
     try:
-        original_dir = os.path.dirname(file_path)
-        tagged_dir = os.path.join(original_dir, "tagged")
-        os.makedirs(tagged_dir, exist_ok=True)
-        base_name = os.path.basename(file_path)
-        new_file_path = os.path.join(tagged_dir, base_name)
-        shutil.copy2(file_path, new_file_path)
+        new_file_path = file_path
 
         if new_file_path.lower().endswith('.png'):
             with Image.open(new_file_path) as im:
@@ -526,9 +521,9 @@ class ImageTaggerApp:
                     continue
             
             try:
-                new_image_path, result = process_image(image_path, model, self.authors.get())
+                updated_image_path, result = process_image(image_path, model, self.authors.get())
                 self.request_times.append(time.time())
-                return new_image_path, result
+                return updated_image_path, result
             except Exception as e:
                 if "rate_limit_error" in str(e):
                     self.update_output("Rate limit hit, waiting for 60 seconds...")

@@ -17,7 +17,6 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 - Pause and resume functionality
 - Progress tracking and time estimation
 - Support for multiple Claude model versions
-- New "tagged" folder for processed images, preserving originals
 - Improved error handling and rate limiting
 - Tooltips for detailed information
 - Alternating row colors in the file list for better readability
@@ -56,7 +55,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
    - Add author information
    - Start, pause, and stop processing
 
-3. The application will process each image, generating a title and 49 tags, and adding this information as metadata to the image files in a new "tagged" folder.
+3. The application will process each image, generating a title and 49 tags, and embed this information directly into the original image files.
 
 ## Configuration
 
