@@ -594,7 +594,8 @@ class ImageTaggerApp:
                 time_diff = current_time - self.request_times[0]
                 if time_diff < 60:
                     sleep_time = 60 - time_diff
-                    self.update_output(f"Approaching rate limit, waiting for {sleep_time:.2f} seconds...")
+                    self.master.after(0, self.update_output,
+                                        f"Approaching rate limit, waiting for {sleep_time:.2f} seconds...")
                     time.sleep(sleep_time)
                     continue
 
@@ -604,12 +605,14 @@ class ImageTaggerApp:
                 return results
             except Exception as e:
                 if "rate_limit_error" in str(e):
-                    self.update_output("Rate limit hit, waiting for 60 seconds...")
+                    self.master.after(0, self.update_output,
+                                        "Rate limit hit, waiting for 60 seconds...")
                     time.sleep(60)
                     self.request_times.clear()
                 else:
                     for path in image_paths:
-                        self.update_output(f"Error processing {path}: {str(e)}")
+                        self.master.after(0, self.update_output,
+                                          f"Error processing {path}: {str(e)}")
                     return {
                         path: {"title": "Error Processing Image", "tags": ["error"], "authors": self.authors.get()}
                         for path in image_paths
