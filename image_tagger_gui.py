@@ -442,8 +442,15 @@ class ImageTaggerApp:
 
     def load_files(self):
         folder_path = self.folder_path.get()
-        image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'))]
+        image_files = [
+            f
+            for f in os.listdir(folder_path)
+            if f.lower().endswith(
+                (".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif")
+            )
+        ]
         self.total_images = len(image_files)
+        self.progress["maximum"] = self.total_images
         
         for i, filename in enumerate(image_files):
             full_path = os.path.join(folder_path, filename)
