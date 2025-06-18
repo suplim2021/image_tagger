@@ -54,7 +54,7 @@ def get_thumbnail(image_path, max_size=(800, 800)):
         return None
 
 def process_images_batch(image_paths, model, authors):
-    """Process up to 10 images in a single Claude request."""
+    """Process a batch of images in a single Claude request."""
     messages_content = []
     valid_paths = []
     results = {}
@@ -202,6 +202,7 @@ class ImageTaggerApp:
         self.selected_model = tk.StringVar(value=self.models[0])
         
         self.max_workers = tk.IntVar(value=1)
+        self.images_per_request = tk.IntVar(value=1)
         self.authors = tk.StringVar()
         
         self.start_time = None
@@ -248,6 +249,9 @@ class ImageTaggerApp:
         
         ttk.Label(settings_frame, text="Max Workers:").grid(row=0, column=2, sticky=tk.E, padx=5, pady=2)
         ttk.Entry(settings_frame, textvariable=self.max_workers, width=5).grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(settings_frame, text="Images per request:").grid(row=1, column=2, sticky=tk.E, padx=5, pady=2)
+        ttk.Entry(settings_frame, textvariable=self.images_per_request, width=5).grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
         # Control buttons
         button_frame = ttk.Frame(main_frame)
@@ -506,7 +510,8 @@ class ImageTaggerApp:
         self.start_time = time.time()
 
         image_paths = [os.path.join(folder_path, filename) for filename in self.image_list]
-        batches = [image_paths[i : i + 10] for i in range(0, len(image_paths), 10)]
+        batch_size = max(1, self.images_per_request.get())
+        batches = [image_paths[i : i + batch_size] for i in range(0, len(image_paths), batch_size)]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers.get()) as executor:
             futures = {
