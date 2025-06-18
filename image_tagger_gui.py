@@ -17,7 +17,6 @@ import tkinter.messagebox as messagebox
 from collections import deque
 import warnings
 import textwrap
-import time
 
 VERSION = "1.2.2"
 
