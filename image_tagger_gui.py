@@ -465,11 +465,25 @@ class ImageTaggerApp:
                         values=(filename, "", "", ""),
                         tags=('even' if self.image_list[filename]["index"] % 2 == 0 else 'odd'))
 
+
+    def validate_images_per_request(self):
+        value = self.images_per_request.get()
+        if value > 20:
+            messagebox.showwarning("Batch size too large",
+                                   "Images per request cannot exceed 20. Clamping to 20.")
+            self.images_per_request.set(20)
+        elif value < 1:
+            messagebox.showwarning("Invalid batch size",
+                                   "Images per request must be at least 1. Clamping to 1.")
+            self.images_per_request.set(1)
+
     def start_processing(self):
         if not self.folder_path.get():
             self.update_output("Please select a folder first.")
             return
-        
+
+        self.validate_images_per_request()
+
         self.is_processing = True
         self.is_paused = False
         self.pause_event.set()
