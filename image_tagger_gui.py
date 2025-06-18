@@ -309,6 +309,9 @@ class ImageTaggerApp:
         # Alternating row colors
         self.tree.tag_configure('odd', background='#F0F0F0')
         self.tree.tag_configure('even', background='#FFFFFF')
+        # Result status colors
+        self.tree.tag_configure('Success', background='#CCFFCC')
+        self.tree.tag_configure('Error', background='#FFCCCC')
 
         # Status bar
         self.status_bar = ttk.Label(main_frame, text="", relief=tk.SUNKEN, anchor=tk.W)
