@@ -368,7 +368,10 @@ class ImageTaggerApp:
                     idx = int(column[1:]) - 1
                     value = f"{column_name}: {values[idx]}" if idx < len(values) else ""
                 
-                x, y, _, _ = self.tree.bbox(item, column)
+                bbox = self.tree.bbox(item, column)
+                if not bbox:
+                    return
+                x, y, _, _ = bbox
                 x += self.tree.winfo_rootx() + 25
                 y += self.tree.winfo_rooty() + 25
                 
