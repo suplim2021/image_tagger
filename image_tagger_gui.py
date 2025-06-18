@@ -53,53 +53,83 @@ def get_thumbnail(image_path, max_size=(800, 800)):
         print(f"Error creating thumbnail for {image_path}: {str(e)}")
         return None
 
-def process_image(image_path, model, authors):
-    try:
-        base64_thumbnail = get_thumbnail(image_path)
+def process_images_batch(image_paths, model, authors):
+    """Process up to 10 images in a single Claude request."""
+    messages_content = []
+    valid_paths = []
+    results = {}
+
+    for path in image_paths:
+        base64_thumbnail = get_thumbnail(path)
         if base64_thumbnail is None:
-            return image_path, {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
-    
+            results[path] = {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
+        else:
+            messages_content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64_thumbnail,
+                    },
+                }
+            )
+            valid_paths.append(path)
+
+    if not messages_content:
+        return results
+
+    try:
         response = client.messages.create(
             model=model,
             max_tokens=1000,
             temperature=0,
-            system="You are a popular AdobeStock contributor. Analyze the image and generate a title and exactly 49 relevant tags optimized for Adobe Stock. Use simple, clear, and searchable words. Sort tags by relevance, focusing on the subject’s appearance, clothing, action, setting, and mood. Avoid repetition and ensure the tags cover key aspects like gender, age, ethnicity (if clear), posture, accessories, and environment. Format the response as a JSON object with 'title' and 'tags' keys.",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/jpeg",
-                                "data": base64_thumbnail
-                            }
-                        }
-                    ]
-                }
-            ]
+            system=(
+                "You are a popular AdobeStock contributor. "
+                "For each provided image, generate a title and exactly 49 relevant tags "
+                "optimized for Adobe Stock. Use simple, clear, and searchable words. "
+                "Sort tags by relevance, focusing on the subject's appearance, clothing, "
+                "action, setting, and mood. Avoid repetition and ensure the tags cover "
+                "key aspects like gender, age, ethnicity (if clear), posture, "
+                "accessories, and environment. Format the response as a JSON array "
+                "where each element corresponds to the input image order and contains "
+                "'title' and 'tags' keys."
+            ),
+            messages=[{"role": "user", "content": messages_content}],
         )
 
         content = response.content[0].text if response.content else None
-        
         if not content:
-            return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
+            for p in valid_paths:
+                results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
+            return results
 
         try:
-            image_data = json.loads(content)
+            image_data_list = json.loads(content)
         except json.JSONDecodeError:
-            return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
+            image_data_list = [{} for _ in valid_paths]
 
-        if 'title' not in image_data or 'tags' not in image_data:
-            return image_path, {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
+        if not isinstance(image_data_list, list):
+            image_data_list = [image_data_list]
 
-        image_data['authors'] = authors
-        updated_image_path = write_metadata(image_path, image_data['title'], image_data['tags'], image_data['authors'])
-        return updated_image_path, image_data
+        for p, data in zip(valid_paths, image_data_list):
+            if not isinstance(data, dict) or "title" not in data or "tags" not in data:
+                data = {"title": "Unprocessed Image", "tags": ["unprocessed"]}
+            data["authors"] = authors
+            write_metadata(p, data["title"], data["tags"], data["authors"])
+            results[p] = data
+
+        # For any valid_paths without returned data (API returned fewer items)
+        if len(image_data_list) < len(valid_paths):
+            for p in valid_paths[len(image_data_list) :]:
+                results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
+
+        return results
     except Exception as e:
-        print(f"Error processing {image_path}: {str(e)}")
-        return image_path, {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
+        print(f"Error processing batch {image_paths}: {str(e)}")
+        for p in valid_paths:
+            results[p] = {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
+        return results
 
 def write_metadata(file_path, title, keywords, authors):
     """Embed metadata directly into the given image file."""
@@ -474,43 +504,63 @@ class ImageTaggerApp:
     def process_images(self):
         folder_path = self.folder_path.get()
         self.start_time = time.time()
-        
+
+        image_paths = [os.path.join(folder_path, filename) for filename in self.image_list]
+        batches = [image_paths[i : i + 10] for i in range(0, len(image_paths), 10)]
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers.get()) as executor:
-            futures = {executor.submit(self.process_image_with_rate_limit, os.path.join(folder_path, filename), self.selected_model.get()): filename for filename in self.image_list}
-            
+            futures = {
+                executor.submit(self.process_images_batch_with_rate_limit, batch, self.selected_model.get()): tuple(batch)
+                for batch in batches
+            }
+
             for future in concurrent.futures.as_completed(futures):
                 if not self.is_processing:
                     for f in futures:
                         f.cancel()
                     break
-                
+
                 self.pause_event.wait()
-                
+
                 if not self.is_processing:
                     for f in futures:
                         f.cancel()
                     break
-                
-                image_path, result = future.result()
-                self.master.after(0, self.update_image_item, image_path, result)
-                
-                self.processed_images += 1
-                self.master.after(0, self.update_progress)
-        
+
+                batch_results = future.result()
+                for image_path, result in batch_results.items():
+                    self.master.after(0, self.update_image_item, image_path, result)
+                    self.processed_images += 1
+                    self.master.after(0, self.update_progress)
+
         self.master.after(0, self.finalize_processing)
 
-    def process_image_with_rate_limit(self, image_path, model):
+    def process_images_batch_with_rate_limit(self, image_paths, model):
         while True:
             if not self.is_processing:
-                return image_path, None
-            
+                return {
+                    p: {
+                        "title": "Error Processing Image",
+                        "tags": ["error"],
+                        "authors": self.authors.get(),
+                    }
+                    for p in image_paths
+                }
+
             self.pause_event.wait()
-            
+
             if not self.is_processing:
-                return image_path, None
-            
+                return {
+                    p: {
+                        "title": "Error Processing Image",
+                        "tags": ["error"],
+                        "authors": self.authors.get(),
+                    }
+                    for p in image_paths
+                }
+
             current_time = time.time()
-            
+
             if len(self.request_times) == 50:
                 time_diff = current_time - self.request_times[0]
                 if time_diff < 60:
@@ -518,19 +568,23 @@ class ImageTaggerApp:
                     self.update_output(f"Approaching rate limit, waiting for {sleep_time:.2f} seconds...")
                     time.sleep(sleep_time)
                     continue
-            
+
             try:
-                updated_image_path, result = process_image(image_path, model, self.authors.get())
+                results = process_images_batch(image_paths, model, self.authors.get())
                 self.request_times.append(time.time())
-                return updated_image_path, result
+                return results
             except Exception as e:
                 if "rate_limit_error" in str(e):
                     self.update_output("Rate limit hit, waiting for 60 seconds...")
                     time.sleep(60)
                     self.request_times.clear()
                 else:
-                    self.update_output(f"Error processing {image_path}: {str(e)}")
-                    return image_path, {"title": "Error Processing Image", "tags": ["error"], "authors": self.authors.get()}
+                    for path in image_paths:
+                        self.update_output(f"Error processing {path}: {str(e)}")
+                    return {
+                        path: {"title": "Error Processing Image", "tags": ["error"], "authors": self.authors.get()}
+                        for path in image_paths
+                    }
 
     def update_image_item(self, image_path, result):
         filename = os.path.basename(image_path)
