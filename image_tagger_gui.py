@@ -18,7 +18,7 @@ from collections import deque
 import warnings
 import textwrap
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 def log_error(message, log_file="error_log.txt"):
     """Print error message and append it to a log file."""
@@ -109,7 +109,7 @@ def process_images_batch(image_paths, model, authors):
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=1000,
+            max_tokens=4000,
             temperature=0,
             system=(
                 "You are a popular AdobeStock contributor. "
