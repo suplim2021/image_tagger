@@ -52,6 +52,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
    - Select the folder containing images
    - Choose the Claude model
    - Set the number of concurrent workers
+   - Set images per request (max 20)
    - Add author information
    - Start, pause, and stop processing
 
@@ -60,6 +61,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 ## Configuration
 
 - You can adjust the number of concurrent workers in the GUI. A higher number may process images faster but could hit API rate limits sooner.
+- Images per request cannot exceed 20.
 - The application uses rate limiting to avoid exceeding API quotas. You can adjust these limits in the code if needed.
 
 ## Troubleshooting
