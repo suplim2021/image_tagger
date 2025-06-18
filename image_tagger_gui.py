@@ -48,6 +48,23 @@ if not API_KEY:
 
 client = anthropic.Anthropic(api_key=API_KEY)
 
+def parse_json_content(content):
+    """Parse JSON that may be wrapped in Markdown code fences."""
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    if content:
+        import re
+        match = re.search(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", content, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+    return None
+
 def get_thumbnail(image_path, max_size=(800, 800)):
     try:
         with Image.open(image_path) as img:
@@ -114,9 +131,8 @@ def process_images_batch(image_paths, model, authors):
                 results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
             return results
 
-        try:
-            image_data_list = json.loads(content)
-        except json.JSONDecodeError:
+        image_data_list = parse_json_content(content)
+        if image_data_list is None:
             log_error(f"Invalid JSON response for batch {valid_paths}: {content}")
             image_data_list = [{} for _ in valid_paths]
 
