@@ -20,6 +20,17 @@ import textwrap
 
 VERSION = "1.2.2"
 
+def log_error(message, log_file="error_log.txt"):
+    """Print error message and append it to a log file."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"[{timestamp}] {message}\n"
+    print(log_entry.strip())
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+    except Exception as e:
+        print(f"Failed to write to log file: {e}")
+
 def load_api_key(file_path='api_key.txt'):
     try:
         with open(file_path, 'r') as file:
@@ -106,6 +117,7 @@ def process_images_batch(image_paths, model, authors):
         try:
             image_data_list = json.loads(content)
         except json.JSONDecodeError:
+            log_error(f"Invalid JSON response for batch {valid_paths}: {content}")
             image_data_list = [{} for _ in valid_paths]
 
         if not isinstance(image_data_list, list):
@@ -125,7 +137,7 @@ def process_images_batch(image_paths, model, authors):
 
         return results
     except Exception as e:
-        print(f"Error processing batch {image_paths}: {str(e)}")
+        log_error(f"Error processing batch {image_paths}: {str(e)}")
         for p in valid_paths:
             results[p] = {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
         return results
@@ -607,9 +619,11 @@ class ImageTaggerApp:
                 if "rate_limit_error" in str(e):
                     self.master.after(0, self.update_output,
                                         "Rate limit hit, waiting for 60 seconds...")
+                    log_error("Rate limit hit while processing batch")
                     time.sleep(60)
                     self.request_times.clear()
                 else:
+                    log_error(f"Error processing batch {image_paths}: {str(e)}")
                     for path in image_paths:
                         self.master.after(0, self.update_output,
                                           f"Error processing {path}: {str(e)}")
