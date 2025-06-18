@@ -1,4 +1,4 @@
-﻿# Image Tagger
+# Image Tagger
 
 Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
 
@@ -20,6 +20,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 - Improved error handling and rate limiting
 - Tooltips for detailed information
 - Alternating row colors in the file list for better readability
+- Configurable "Images per request" setting (up to 20 images per API call)
 
 ## Prerequisites
 
@@ -61,7 +62,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 ## Configuration
 
 - You can adjust the number of concurrent workers in the GUI. A higher number may process images faster but could hit API rate limits sooner.
-- Images per request cannot exceed 20.
+- The "Images per request" value controls how many images are submitted in a single API request. The maximum allowed is 20.
 - The application uses rate limiting to avoid exceeding API quotas. You can adjust these limits in the code if needed.
 
 ## Troubleshooting
