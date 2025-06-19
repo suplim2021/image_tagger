@@ -4,6 +4,7 @@ Image Tagger is a Python application that uses the Anthropic Claude API to autom
 
 ## Version 1.2.4
 
+
 ## Authorship Note
 
 This code was written by an AI assistant (Claude) based on ideas and requirements provided by the repository owner. The implementation, structure, and specific coding decisions were made by the AI, while the concept and feature requests came from the human user.
