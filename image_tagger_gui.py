@@ -9,7 +9,9 @@ import concurrent.futures
 import piexif
 import piexif.helper
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog
+from ttkbootstrap import ttk
+import ttkbootstrap as tb
 import threading
 import pyexiv2
 import time
@@ -284,7 +286,6 @@ class ImageTaggerApp:
     
     def create_widgets(self):
         style = ttk.Style()
-        style.theme_use('clam')  # Use a more modern-looking theme
         style.configure("Treeview", rowheight=55)  # Set a fixed row height
         
         main_frame = ttk.Frame(self.master, padding="10")
@@ -776,7 +777,7 @@ class ImageTaggerApp:
         messagebox.showinfo("Task Complete", message)
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = tb.Window(themename="flatly")
     root.geometry("1200x700")  # Increased window size
     root.resizable(True, True)
     app = ImageTaggerApp(root)
