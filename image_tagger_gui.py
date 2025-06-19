@@ -177,10 +177,26 @@ def process_images_batch(image_paths, model, authors):
             results[p] = {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
         return results
 
-def write_metadata(file_path, title, keywords, authors):
+def clear_metadata(file_path):
+    """Remove all existing metadata from the image."""
+    try:
+        with pyexiv2.Image(file_path) as img:
+            img.clear_exif()
+            img.clear_iptc()
+            img.clear_xmp()
+            img.clear_comment()
+            img.clear_icc()
+        print(f"Cleared metadata for {file_path}")
+    except Exception as e:
+        print(f"Error clearing metadata from {file_path}: {str(e)}")
+
+def write_metadata(file_path, title, keywords, authors, clear_existing=False):
     """Embed metadata directly into the given image file."""
     try:
         new_file_path = file_path
+
+        if clear_existing:
+            clear_metadata(new_file_path)
 
         if new_file_path.lower().endswith('.png'):
             with Image.open(new_file_path) as im:

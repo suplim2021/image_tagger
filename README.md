@@ -14,6 +14,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 - Bulk image processing (including PNG, JPG, JPEG, TIFF, BMP, and GIF support)
 - Automatic title and 49 tag generation using AI
 - Metadata (EXIF, IPTC, and XMP) insertion
+- Optionally clear existing metadata before adding new information
 - User-friendly GUI with thumbnail previews
 - Pause and resume functionality
 - Progress tracking and time estimation
@@ -59,6 +60,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
    - Start, pause, and stop processing
 
 3. The application will process each image, generating a title and 49 tags, and embed this information directly into the original image files.
+   Use the `clear_existing` option in the code if you want all previous metadata removed before the new data is written.
 
 ## Configuration
 
