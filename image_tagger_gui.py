@@ -290,6 +290,7 @@ class ImageTaggerApp:
 
         self.thumbnail_size = (60, 60)  # Increased thumbnail size
         self.thumbnail_cache = {}
+        self.preview_image = None
     
     def create_widgets(self):
         style = ttk.Style()
@@ -405,9 +406,16 @@ class ImageTaggerApp:
         self.tree.tag_configure('Success', background='#CCFFCC')
         self.tree.tag_configure('Error', background='#FFCCCC')
 
+        # Bind selection event to show preview
+        self.tree.bind('<<TreeviewSelect>>', self.show_preview)
+
+        # Preview area
+        self.preview_label = ttk.Label(main_frame)
+        self.preview_label.grid(row=5, column=0, columnspan=3, pady=5)
+
         # Status bar
         self.status_bar = ttk.Label(main_frame, text="", relief=tk.SUNKEN, anchor=tk.W)
-        self.status_bar.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E))
+        self.status_bar.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E))
 
         # Configure main_frame and tree_frame to expand
         main_frame.columnconfigure(0, weight=1)
@@ -509,6 +517,9 @@ class ImageTaggerApp:
             self.folder_path.set(folder_selected)
             self.reset_state()
             self.clear_tree()
+            if hasattr(self, 'preview_label'):
+                self.preview_label.config(image='', text='')
+            self.preview_image = None
             self.update_output(f"Selected folder: {folder_selected}")
             threading.Thread(target=self.load_files, daemon=True).start()
 
@@ -531,6 +542,9 @@ class ImageTaggerApp:
         self.stop_button.config(state=tk.DISABLED, text=f"{self.stop_icon} Stop")
         self.clear_button.config(state=tk.DISABLED, text=f"{self.trash_icon} Clear Metadata")
         self.status_bar.config(text="")
+        if hasattr(self, 'preview_label'):
+            self.preview_label.config(image='', text='')
+        self.preview_image = None
 
     def clear_tree(self):
         for item in self.tree.get_children():
@@ -788,11 +802,29 @@ class ImageTaggerApp:
             images_left = self.total_images - self.processed_images
             estimated_total_time = (elapsed_time / self.processed_images) * self.total_images
             estimated_time_left = max(0, estimated_total_time - elapsed_time)
-            
+
             hours, rem = divmod(estimated_time_left, 3600)
             minutes, seconds = divmod(rem, 60)
-            
+
             self.time_label.config(text=f"Estimated time left: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
+
+    def show_preview(self, event=None):
+        selected = self.tree.selection()
+        if not selected:
+            return
+        item = self.tree.item(selected[0])
+        if not item['values']:
+            return
+        filename = item['values'][0]
+        image_path = os.path.join(self.folder_path.get(), filename)
+        try:
+            with Image.open(image_path) as img:
+                img.thumbnail((400, 400))
+                self.preview_image = ImageTk.PhotoImage(img)
+                self.preview_label.config(image=self.preview_image, text='')
+        except Exception:
+            self.preview_label.config(text='Failed to load image', image='')
+            self.preview_image = None
 
     def show_completion_message(self):
         elapsed_time = time.time() - self.start_time
