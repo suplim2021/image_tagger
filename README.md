@@ -39,7 +39,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 
 2. Install the required Python packages:
    ```
-   pip install anthropic pillow piexif pyexiv2
+   pip install -r requirements.txt
    ```
 
 3. Create a file named `api_key.txt` in the root directory and paste your Anthropic API key into it.
