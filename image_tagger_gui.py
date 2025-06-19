@@ -325,6 +325,8 @@ class ImageTaggerApp:
         self.pause_button.pack(side=tk.LEFT, padx=5)
         self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_processing, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.clear_button = ttk.Button(button_frame, text="Clear Metadata", command=self.clear_all_metadata, state=tk.DISABLED)
+        self.clear_button.pack(side=tk.LEFT, padx=5)
 
         # Progress and stats
         progress_frame = ttk.Frame(main_frame)
@@ -500,6 +502,7 @@ class ImageTaggerApp:
         self.start_button.config(state=tk.NORMAL)
         self.pause_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.DISABLED)
+        self.clear_button.config(state=tk.DISABLED)
         self.status_bar.config(text="")
 
     def clear_tree(self):
@@ -533,6 +536,7 @@ class ImageTaggerApp:
         
         self.master.after(0, self.update_output, f"Loaded {self.total_images} images")
         self.master.after(0, lambda: self.start_button.config(state=tk.NORMAL))
+        self.master.after(0, lambda: self.clear_button.config(state=tk.NORMAL))
 
     def add_tree_item(self, filename, full_path):
         thumbnail = self.get_thumbnail(full_path)
@@ -566,6 +570,7 @@ class ImageTaggerApp:
         self.start_button.config(state=tk.DISABLED)
         self.pause_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.NORMAL)
+        self.clear_button.config(state=tk.DISABLED)
         self.progress['value'] = 0
         self.processed_images = 0
         self.ok_count = 0
@@ -593,6 +598,7 @@ class ImageTaggerApp:
         self.start_button.config(state=tk.NORMAL)
         self.pause_button.config(state=tk.DISABLED, text="Pause")
         self.stop_button.config(state=tk.DISABLED)
+        self.clear_button.config(state=tk.NORMAL if self.folder_path.get() else tk.DISABLED)
         self.update_output("Processing stopped.")
 
     def process_images(self):
@@ -721,8 +727,27 @@ class ImageTaggerApp:
         self.start_button.config(state=tk.NORMAL)
         self.pause_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.DISABLED)
+        self.clear_button.config(state=tk.NORMAL if self.folder_path.get() else tk.DISABLED)
         self.update_output("Processing complete.")
         self.show_completion_message()
+
+    def clear_all_metadata(self):
+        if not self.folder_path.get() or not self.image_list:
+            messagebox.showwarning("No Images", "Please load a folder first.")
+            return
+        confirm = messagebox.askyesno(
+            "Confirm",
+            "Are you sure you want to clear metadata from all images?",
+        )
+        if not confirm:
+            return
+
+        for filename in self.image_list:
+            file_path = os.path.join(self.folder_path.get(), filename)
+            clear_metadata(file_path)
+
+        messagebox.showinfo("Metadata Cleared", "All metadata has been removed.")
+        self.update_output("Metadata cleared from all images.")
 
     def update_stats(self):
         self.stats_label.config(text=f"Progress: {self.processed_images}/{self.total_images} | Success: {self.ok_count} | Error: {self.error_count}")
