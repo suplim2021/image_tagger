@@ -18,7 +18,7 @@ from collections import deque
 import warnings
 import textwrap
 
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 
 def log_error(message, log_file="error_log.txt"):
     """Print error message and append it to a log file."""
@@ -49,20 +49,39 @@ if not API_KEY:
 client = anthropic.Anthropic(api_key=API_KEY)
 
 def parse_json_content(content):
-    """Parse JSON that may be wrapped in Markdown code fences."""
+    """Parse JSON that may be wrapped in Markdown code fences and handle minor corruption."""
+    if not content:
+        return None
+
+    content = content.strip()
+    if content.startswith("```"):
+        content = content.strip("`")
+        if content.startswith("json"):
+            content = content[4:].lstrip()
+        if content.endswith("```"):
+            content = content[:-3].strip()
+
     try:
         return json.loads(content)
     except json.JSONDecodeError:
         pass
 
-    if content:
-        import re
-        match = re.search(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", content, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
+    import re
+    match = re.search(r"\{.*\}|\[.*\]", content, re.DOTALL)
+    if match:
+        snippet = match.group(0)
+    else:
+        snippet = content
+
+    # Attempt to parse by progressively trimming trailing characters
+    for end in range(len(snippet), 0, -1):
+        sub = snippet[:end].strip()
+        # remove trailing commas before closing brackets
+        sub = re.sub(r",\s*([\]\}])", r"\1", sub)
+        try:
+            return json.loads(sub)
+        except json.JSONDecodeError:
+            continue
     return None
 
 def get_thumbnail(image_path, max_size=(800, 800)):
