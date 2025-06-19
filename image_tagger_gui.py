@@ -19,6 +19,7 @@ import tkinter.messagebox as messagebox
 from collections import deque
 import warnings
 import textwrap
+from ttkbootstrap.icons import Emoji
 
 VERSION = "1.2.4"
 
@@ -277,7 +278,13 @@ class ImageTaggerApp:
         
         self.image_list = {}
         self.current_index = 1
-        
+
+        # Emoji icons for control buttons
+        self.play_icon = Emoji.get("black right-pointing triangle") or "\u25B6"
+        self.pause_icon = Emoji.get("double vertical bar") or "\u23F8"
+        self.stop_icon = Emoji.get("black square for stop") or "\u23F9"
+        self.trash_icon = Emoji.get("wastebasket") or "\U0001F5D1"
+
         self.create_widgets()
         self.reset_state()
 
@@ -317,16 +324,35 @@ class ImageTaggerApp:
         ttk.Label(settings_frame, text="Images per request:").grid(row=1, column=2, sticky=tk.E, padx=5, pady=2)
         ttk.Entry(settings_frame, textvariable=self.images_per_request, width=5).grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
-        # Control buttons
+        # Control buttons with emoji icons
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=2, column=0, columnspan=3, pady=10)
-        self.start_button = ttk.Button(button_frame, text="Start", command=self.start_processing)
+        self.start_button = ttk.Button(
+            button_frame,
+            text=f"{self.play_icon} Start",
+            command=self.start_processing,
+        )
         self.start_button.pack(side=tk.LEFT, padx=5)
-        self.pause_button = ttk.Button(button_frame, text="Pause", command=self.toggle_pause, state=tk.DISABLED)
+        self.pause_button = ttk.Button(
+            button_frame,
+            text=f"{self.pause_icon} Pause",
+            command=self.toggle_pause,
+            state=tk.DISABLED,
+        )
         self.pause_button.pack(side=tk.LEFT, padx=5)
-        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_processing, state=tk.DISABLED)
+        self.stop_button = ttk.Button(
+            button_frame,
+            text=f"{self.stop_icon} Stop",
+            command=self.stop_processing,
+            state=tk.DISABLED,
+        )
         self.stop_button.pack(side=tk.LEFT, padx=5)
-        self.clear_button = ttk.Button(button_frame, text="Clear Metadata", command=self.clear_all_metadata, state=tk.DISABLED)
+        self.clear_button = ttk.Button(
+            button_frame,
+            text=f"{self.trash_icon} Clear Metadata",
+            command=self.clear_all_metadata,
+            state=tk.DISABLED,
+        )
         self.clear_button.pack(side=tk.LEFT, padx=5)
 
         # Progress and stats
@@ -500,10 +526,10 @@ class ImageTaggerApp:
         self.progress['value'] = 0
         self.update_stats()
         self.time_label.config(text="Estimated: --:--:--")
-        self.start_button.config(state=tk.NORMAL)
-        self.pause_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.DISABLED)
-        self.clear_button.config(state=tk.DISABLED)
+        self.start_button.config(state=tk.NORMAL, text=f"{self.play_icon} Start")
+        self.pause_button.config(state=tk.DISABLED, text=f"{self.pause_icon} Pause")
+        self.stop_button.config(state=tk.DISABLED, text=f"{self.stop_icon} Stop")
+        self.clear_button.config(state=tk.DISABLED, text=f"{self.trash_icon} Clear Metadata")
         self.status_bar.config(text="")
 
     def clear_tree(self):
@@ -584,12 +610,12 @@ class ImageTaggerApp:
         if self.is_paused:
             self.is_paused = False
             self.pause_event.set()
-            self.pause_button.config(text="Pause")
+            self.pause_button.config(text=f"{self.pause_icon} Pause")
             self.update_output("Processing resumed.")
         else:
             self.is_paused = True
             self.pause_event.clear()
-            self.pause_button.config(text="Resume")
+            self.pause_button.config(text=f"{self.play_icon} Resume")
             self.update_output("Processing paused.")
 
     def stop_processing(self):
@@ -597,7 +623,7 @@ class ImageTaggerApp:
         self.is_paused = False
         self.pause_event.set()
         self.start_button.config(state=tk.NORMAL)
-        self.pause_button.config(state=tk.DISABLED, text="Pause")
+        self.pause_button.config(state=tk.DISABLED, text=f"{self.pause_icon} Pause")
         self.stop_button.config(state=tk.DISABLED)
         self.clear_button.config(state=tk.NORMAL if self.folder_path.get() else tk.DISABLED)
         self.update_output("Processing stopped.")
@@ -726,7 +752,7 @@ class ImageTaggerApp:
     def finalize_processing(self):
         self.is_processing = False
         self.start_button.config(state=tk.NORMAL)
-        self.pause_button.config(state=tk.DISABLED)
+        self.pause_button.config(state=tk.DISABLED, text=f"{self.pause_icon} Pause")
         self.stop_button.config(state=tk.DISABLED)
         self.clear_button.config(state=tk.NORMAL if self.folder_path.get() else tk.DISABLED)
         self.update_output("Processing complete.")
