@@ -517,9 +517,16 @@ class ImageTaggerApp:
                 # Wrap long text
                 wrapped_text = '\n'.join(textwrap.wrap(str(value), width=50))
 
-                label = tk.Label(self.tooltip, text=wrapped_text, justify=tk.LEFT,
-                                background="#ffffe0", relief=tk.SOLID, borderwidth=1,
-                                font=("tahoma", "8", "normal"), wraplength=300)
+                label = tk.Label(
+                    self.tooltip,
+                    text=wrapped_text,
+                    justify=tk.LEFT,
+                    background="#ffffe0",
+                    relief=tk.SOLID,
+                    borderwidth=1,
+                    font=("tahoma", "8", "normal"),
+                    wraplength=300,
+                )
                 label.pack(ipadx=1, ipady=1)
 
                 self.last_motion_time = time.time()
@@ -755,8 +762,11 @@ class ImageTaggerApp:
                 time_diff = current_time - self.request_times[0]
                 if time_diff < 60:
                     sleep_time = 60 - time_diff
-                    self.master.after(0, self.update_output,
-                                        f"Approaching rate limit, waiting for {sleep_time:.2f} seconds...")
+                    self.master.after(
+                        0,
+                        self.update_output,
+                        f"Approaching rate limit, waiting for {sleep_time:.2f} seconds...",
+                    )
                     time.sleep(sleep_time)
                     continue
 
@@ -766,18 +776,28 @@ class ImageTaggerApp:
                 return results
             except Exception as e:
                 if "rate_limit_error" in str(e):
-                    self.master.after(0, self.update_output,
-                                        "Rate limit hit, waiting for 60 seconds...")
+                    self.master.after(
+                        0,
+                        self.update_output,
+                        "Rate limit hit, waiting for 60 seconds...",
+                    )
                     log_error("Rate limit hit while processing batch")
                     time.sleep(60)
                     self.request_times.clear()
                 else:
                     log_error(f"Error processing batch {image_paths}: {str(e)}")
                     for path in image_paths:
-                        self.master.after(0, self.update_output,
-                                          f"Error processing {path}: {str(e)}")
+                        self.master.after(
+                            0,
+                            self.update_output,
+                            f"Error processing {path}: {str(e)}",
+                        )
                     return {
-                        path: {"title": "Error Processing Image", "tags": ["error"], "authors": self.authors.get()}
+                        path: {
+                            "title": "Error Processing Image",
+                            "tags": ["error"],
+                            "authors": self.authors.get(),
+                        }
                         for path in image_paths
                     }
 
@@ -852,7 +872,6 @@ class ImageTaggerApp:
     def update_time_estimate(self):
         if self.start_time and self.processed_images > 0:
             elapsed_time = time.time() - self.start_time
-            images_left = self.total_images - self.processed_images
             estimated_total_time = (elapsed_time / self.processed_images) * self.total_images
             estimated_time_left = max(0, estimated_total_time - elapsed_time)
 
