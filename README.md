@@ -2,7 +2,7 @@
 
 Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
 
-## Version 1.2.2
+## Version 1.2.4
 
 ## Authorship Note
 
