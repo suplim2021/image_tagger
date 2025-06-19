@@ -23,6 +23,7 @@ from ttkbootstrap.icons import Emoji
 
 VERSION = "1.2.4"
 
+
 def log_error(message, log_file="error_log.txt"):
     """Print error message and append it to a log file."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -33,6 +34,7 @@ def log_error(message, log_file="error_log.txt"):
             f.write(log_entry)
     except Exception as e:
         print(f"Failed to write to log file: {e}")
+
 
 def load_api_key(file_path='api_key.txt'):
     try:
@@ -45,11 +47,13 @@ def load_api_key(file_path='api_key.txt'):
         print(f"Error reading API key: {str(e)}")
         return None
 
+
 API_KEY = load_api_key()
 if not API_KEY:
     raise ValueError("Failed to load API key. Please ensure 'api_key.txt' exists in the same directory as this script.")
 
 client = anthropic.Anthropic(api_key=API_KEY)
+
 
 def parse_json_content(content):
     """Parse JSON that may be wrapped in Markdown code fences and handle minor corruption."""
@@ -87,6 +91,7 @@ def parse_json_content(content):
             continue
     return None
 
+
 def get_thumbnail(image_path, max_size=(800, 800)):
     try:
         with Image.open(image_path) as img:
@@ -101,6 +106,7 @@ def get_thumbnail(image_path, max_size=(800, 800)):
     except Exception as e:
         print(f"Error creating thumbnail for {image_path}: {str(e)}")
         return None
+
 
 def process_images_batch(image_paths, model, authors):
     """Process a batch of images in a single Claude request."""
@@ -170,7 +176,7 @@ def process_images_batch(image_paths, model, authors):
 
         # For any valid_paths without returned data (API returned fewer items)
         if len(image_data_list) < len(valid_paths):
-            for p in valid_paths[len(image_data_list) :]:
+            for p in valid_paths[len(image_data_list):]:
                 results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
 
         return results
@@ -179,6 +185,7 @@ def process_images_batch(image_paths, model, authors):
         for p in valid_paths:
             results[p] = {"title": "Error Processing Image", "tags": ["error"], "authors": authors}
         return results
+
 
 def clear_metadata(file_path):
     """Remove all existing metadata from the image."""
@@ -192,6 +199,7 @@ def clear_metadata(file_path):
         print(f"Cleared metadata for {file_path}")
     except Exception as e:
         print(f"Error clearing metadata from {file_path}: {str(e)}")
+
 
 def write_metadata(file_path, title, keywords, authors, clear_existing=False):
     """Embed metadata directly into the given image file."""
@@ -230,7 +238,12 @@ def write_metadata(file_path, title, keywords, authors, clear_existing=False):
                     'keywords': keywords,
                     'authors': authors
                 }
-                exif_dict['Exif'][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(json.dumps(iptc_data), encoding="unicode")
+                exif_dict['Exif'][piexif.ExifIFD.UserComment] = (
+                    piexif.helper.UserComment.dump(
+                        json.dumps(iptc_data),
+                        encoding="unicode",
+                    )
+                )
                 exif_bytes = piexif.dump(exif_dict)
                 piexif.insert(exif_bytes, new_file_path)
             with pyexiv2.Image(new_file_path) as img:
@@ -245,11 +258,12 @@ def write_metadata(file_path, title, keywords, authors, clear_existing=False):
         print(f"Error attaching metadata to {file_path}: {str(e)}")
         return file_path
 
+
 class ImageTaggerApp:
     def __init__(self, master):
         self.master = master
         master.title(f"Adobe Stock AI Keywording (Anthropic API) v{VERSION}")
-        
+
         self.folder_path = tk.StringVar()
         self.is_processing = False
         self.is_paused = False
@@ -257,7 +271,7 @@ class ImageTaggerApp:
         self.processed_images = 0
         self.ok_count = 0
         self.error_count = 0
-        
+
         self.models = [
             "claude-sonnet-4-20250514",
             "claude-3-7-sonnet-latest",
@@ -266,16 +280,16 @@ class ImageTaggerApp:
             "claude-3-5-sonnet-latest"
         ]
         self.selected_model = tk.StringVar(value=self.models[0])
-        
+
         self.max_workers = tk.IntVar(value=1)
         self.images_per_request = tk.IntVar(value=1)
         self.authors = tk.StringVar()
-        
+
         self.start_time = None
         self.request_times = deque(maxlen=50)
         self.pause_event = threading.Event()
         self.pause_event.set()
-        
+
         self.image_list = {}
         self.current_index = 1
 
@@ -291,11 +305,11 @@ class ImageTaggerApp:
         self.thumbnail_size = (60, 60)  # Increased thumbnail size
         self.thumbnail_cache = {}
         self.preview_image = None
-    
+
     def create_widgets(self):
         style = ttk.Style()
         style.configure("Treeview", rowheight=55)  # Set a fixed row height
-        
+
         main_frame = ttk.Frame(self.master, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.master.columnconfigure(0, weight=1)
@@ -305,25 +319,47 @@ class ImageTaggerApp:
         path_frame = ttk.Frame(main_frame)
         path_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         ttk.Label(path_frame, text="Path:").grid(row=0, column=0, sticky=tk.E, padx=5)
-        ttk.Entry(path_frame, textvariable=self.folder_path, width=50).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
+        ttk.Entry(
+            path_frame,
+            textvariable=self.folder_path,
+            width=50,
+        ).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
         ttk.Button(path_frame, text="Choose path", command=self.choose_folder).grid(row=0, column=2, padx=5)
         path_frame.columnconfigure(1, weight=1)
 
         # Settings frame
         settings_frame = ttk.LabelFrame(main_frame, text="Settings", padding="5")
         settings_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
-        
+
         ttk.Label(settings_frame, text="Model:").grid(row=0, column=0, sticky=tk.E, padx=5, pady=2)
-        ttk.Combobox(settings_frame, textvariable=self.selected_model, values=self.models, state="readonly", width=25).grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
-        
+        ttk.Combobox(
+            settings_frame,
+            textvariable=self.selected_model,
+            values=self.models,
+            state="readonly",
+            width=25,
+        ).grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
         ttk.Label(settings_frame, text="Authors:").grid(row=1, column=0, sticky=tk.E, padx=5, pady=2)
-        ttk.Entry(settings_frame, textvariable=self.authors, width=30).grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
-        
+        ttk.Entry(
+            settings_frame,
+            textvariable=self.authors,
+            width=30,
+        ).grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+
         ttk.Label(settings_frame, text="Max Workers:").grid(row=0, column=2, sticky=tk.E, padx=5, pady=2)
-        ttk.Entry(settings_frame, textvariable=self.max_workers, width=5).grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        ttk.Entry(
+            settings_frame,
+            textvariable=self.max_workers,
+            width=5,
+        ).grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(settings_frame, text="Images per request:").grid(row=1, column=2, sticky=tk.E, padx=5, pady=2)
-        ttk.Entry(settings_frame, textvariable=self.images_per_request, width=5).grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        ttk.Entry(
+            settings_frame,
+            textvariable=self.images_per_request,
+            width=5,
+        ).grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
         # Control buttons with emoji icons
         button_frame = ttk.Frame(main_frame)
@@ -374,24 +410,24 @@ class ImageTaggerApp:
 
         columns = ("filename", "title", "tags", "authors")
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="tree headings", height=15, style="Treeview")
-        
+
         self.tree.heading("#0", text="Thumbnail")
         self.tree.column("#0", width=130, stretch=tk.NO)  # Adjusted width for thumbnails
-        
+
         self.tree.heading("filename", text="Filename")
         self.tree.column("filename", width=150, stretch=tk.YES)
-        
+
         self.tree.heading("title", text="Title")
         self.tree.column("title", width=150, stretch=tk.YES)
-        
+
         self.tree.heading("tags", text="Tags")
         self.tree.column("tags", width=180, stretch=tk.YES)
-        
+
         self.tree.heading("authors", text="Authors")
         self.tree.column("authors", width=80, stretch=tk.NO)
-        
+
         self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
+
         # Scrollbars for Treeview
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         vsb.grid(row=0, column=1, sticky=(tk.N, tk.S))
@@ -426,7 +462,7 @@ class ImageTaggerApp:
     def get_thumbnail(self, image_path):
         if image_path in self.thumbnail_cache:
             return self.thumbnail_cache[image_path]
-        
+
         try:
             with Image.open(image_path) as img:
                 # Set a fixed height and calculate width to maintain aspect ratio
@@ -434,7 +470,7 @@ class ImageTaggerApp:
                 max_width = 100  # Set a maximum width
                 aspect_ratio = img.width / img.height
                 new_width = min(int(fixed_height * aspect_ratio), max_width)
-                
+
                 img = img.resize((new_width, fixed_height), Image.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 self.thumbnail_cache[image_path] = photo
@@ -467,25 +503,25 @@ class ImageTaggerApp:
                 else:
                     idx = int(column[1:]) - 1
                     value = f"{column_name}: {values[idx]}" if idx < len(values) else ""
-                
+
                 bbox = self.tree.bbox(item, column)
                 if not bbox:
                     return
                 x, y, _, _ = bbox
                 x += self.tree.winfo_rootx() + 25
                 y += self.tree.winfo_rooty() + 25
-                
+
                 self.tooltip = tk.Toplevel(self.tree)
                 self.tooltip.wm_overrideredirect(True)
                 self.tooltip.wm_geometry(f"+{x}+{y}")
                 # Wrap long text
                 wrapped_text = '\n'.join(textwrap.wrap(str(value), width=50))
-                
+
                 label = tk.Label(self.tooltip, text=wrapped_text, justify=tk.LEFT,
                                 background="#ffffe0", relief=tk.SOLID, borderwidth=1,
                                 font=("tahoma", "8", "normal"), wraplength=300)
                 label.pack(ipadx=1, ipady=1)
-                
+
                 self.last_motion_time = time.time()
                 check_hide_tooltip()
 
@@ -561,31 +597,36 @@ class ImageTaggerApp:
         ]
         self.total_images = len(image_files)
         self.progress["maximum"] = self.total_images
-        
+
         for i, filename in enumerate(image_files):
             full_path = os.path.join(folder_path, filename)
             self.image_list[filename] = {
-                "index": i + 1, 
-                "status": "Loaded", 
-                "title": "", 
-                "tags": "", 
+                "index": i + 1,
+                "status": "Loaded",
+                "title": "",
+                "tags": "",
                 "authors": ""
             }
             self.master.after(0, self.add_tree_item, filename, full_path)
             if i % 10 == 0:
                 self.master.after(0, self.update_stats)
-        
+
         self.master.after(0, self.update_output, f"Loaded {self.total_images} images")
         self.master.after(0, lambda: self.start_button.config(state=tk.NORMAL))
         self.master.after(0, lambda: self.clear_button.config(state=tk.NORMAL))
 
     def add_tree_item(self, filename, full_path):
         thumbnail = self.get_thumbnail(full_path)
-        self.tree.insert("", "end", iid=str(self.image_list[filename]["index"]), 
-                        image=thumbnail, 
-                        values=(filename, "", "", ""),
-                        tags=('even' if self.image_list[filename]["index"] % 2 == 0 else 'odd'))
-
+        self.tree.insert(
+            "",
+            "end",
+            iid=str(self.image_list[filename]["index"]),
+            image=thumbnail,
+            values=(filename, "", "", ""),
+            tags=(
+                'even' if self.image_list[filename]["index"] % 2 == 0 else 'odd'
+            ),
+        )
 
     def validate_images_per_request(self):
         value = self.images_per_request.get()
@@ -616,7 +657,7 @@ class ImageTaggerApp:
         self.processed_images = 0
         self.ok_count = 0
         self.error_count = 0
-        
+
         self.update_output("Starting processing...")
         threading.Thread(target=self.process_images, daemon=True).start()
 
@@ -648,11 +689,18 @@ class ImageTaggerApp:
 
         image_paths = [os.path.join(folder_path, filename) for filename in self.image_list]
         batch_size = max(1, self.images_per_request.get())
-        batches = [image_paths[i : i + batch_size] for i in range(0, len(image_paths), batch_size)]
+        batches = [
+            image_paths[i: i + batch_size]
+            for i in range(0, len(image_paths), batch_size)
+        ]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers.get()) as executor:
             futures = {
-                executor.submit(self.process_images_batch_with_rate_limit, batch, self.selected_model.get()): tuple(batch)
+                executor.submit(
+                    self.process_images_batch_with_rate_limit,
+                    batch,
+                    self.selected_model.get(),
+                ): tuple(batch)
                 for batch in batches
             }
 
@@ -736,7 +784,7 @@ class ImageTaggerApp:
     def update_image_item(self, image_path, result):
         filename = os.path.basename(image_path)
         status = "Success" if result and 'title' in result and result['title'] != "Error Processing Image" else "Error"
-        
+
         if filename in self.image_list:
             item = self.image_list[filename]
             item.update({
@@ -745,17 +793,17 @@ class ImageTaggerApp:
                 "tags": ", ".join(result.get('tags', [])),
                 "authors": result.get('authors', '')
             })
-            
+
             values = (filename, item['title'], item['tags'], item['authors'])
-            
+
             self.tree.item(str(item['index']), values=values)
             self.tree.item(str(item['index']), tags=(status,))
-            
+
             if status == "Success":
                 self.ok_count += 1
             else:
                 self.error_count += 1
-            
+
             self.update_stats()
 
     def update_progress(self):
@@ -791,7 +839,12 @@ class ImageTaggerApp:
         self.update_output("Metadata cleared from all images.")
 
     def update_stats(self):
-        self.stats_label.config(text=f"Progress: {self.processed_images}/{self.total_images} | Success: {self.ok_count} | Error: {self.error_count}")
+        self.stats_label.config(
+            text=(
+                f"Progress: {self.processed_images}/{self.total_images} | "
+                f"Success: {self.ok_count} | Error: {self.error_count}"
+            )
+        )
 
     def update_output(self, message):
         self.status_bar.config(text=message)
@@ -830,9 +883,10 @@ class ImageTaggerApp:
         elapsed_time = time.time() - self.start_time
         hours, rem = divmod(elapsed_time, 3600)
         minutes, seconds = divmod(rem, 60)
-        
+
         message = f"Task completed!\nTotal time: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
         messagebox.showinfo("Task Complete", message)
+
 
 if __name__ == "__main__":
     root = tb.Window(themename="flatly")
