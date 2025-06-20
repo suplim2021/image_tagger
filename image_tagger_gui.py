@@ -499,7 +499,7 @@ class ImageTaggerApp:
                 values = self.tree.item(item)['values']
                 column_name = self.tree.heading(column)['text']
                 if column == '#0':
-                    value = f"Filename: {values[0]}" if values else ""
+                    value = values[0] if values else ""
                 else:
                     idx = int(column[1:]) - 1
                     value = f"{column_name}: {values[idx]}" if idx < len(values) else ""
@@ -514,20 +514,39 @@ class ImageTaggerApp:
                 self.tooltip = tk.Toplevel(self.tree)
                 self.tooltip.wm_overrideredirect(True)
                 self.tooltip.wm_geometry(f"+{x}+{y}")
-                # Wrap long text
-                wrapped_text = '\n'.join(textwrap.wrap(str(value), width=50))
+                if column == '#0' and value:
+                    image_path = os.path.join(self.folder_path.get(), value)
+                    try:
+                        with Image.open(image_path) as img:
+                            img.thumbnail((400, 400))
+                            photo = ImageTk.PhotoImage(img)
+                    except Exception:
+                        photo = None
 
-                label = tk.Label(
-                    self.tooltip,
-                    text=wrapped_text,
-                    justify=tk.LEFT,
-                    background="#ffffe0",
-                    relief=tk.SOLID,
-                    borderwidth=1,
-                    font=("tahoma", "8", "normal"),
-                    wraplength=300,
-                )
-                label.pack(ipadx=1, ipady=1)
+                    if photo:
+                        label = tk.Label(
+                            self.tooltip,
+                            image=photo,
+                            background="#ffffe0",
+                            relief=tk.SOLID,
+                            borderwidth=1,
+                        )
+                        label.image = photo
+                        label.pack(ipadx=1, ipady=1)
+                else:
+                    wrapped_text = "\n".join(textwrap.wrap(str(value), width=50))
+
+                    label = tk.Label(
+                        self.tooltip,
+                        text=wrapped_text,
+                        justify=tk.LEFT,
+                        background="#ffffe0",
+                        relief=tk.SOLID,
+                        borderwidth=1,
+                        font=("tahoma", "8", "normal"),
+                        wraplength=300,
+                    )
+                    label.pack(ipadx=1, ipady=1)
 
                 self.last_motion_time = time.time()
                 check_hide_tooltip()
