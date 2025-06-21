@@ -12,6 +12,11 @@ import tkinter as tk
 from tkinter import filedialog
 from ttkbootstrap import ttk
 import ttkbootstrap as tb
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+except Exception:  # pragma: no cover - optional dependency may not exist
+    DND_FILES = None
+    TkinterDnD = None
 import threading
 import pyexiv2
 import time
@@ -299,6 +304,13 @@ class ImageTaggerApp:
         self.stop_icon = Emoji.get("black square for stop") or "\u23F9"
         self.trash_icon = Emoji.get("wastebasket") or "\U0001F5D1"
 
+        if DND_FILES is not None:
+            try:
+                master.drop_target_register(DND_FILES)
+                master.dnd_bind("<<Drop>>", self.on_drop)
+            except Exception:
+                pass
+
         self.create_widgets()
         self.reset_state()
 
@@ -575,6 +587,9 @@ class ImageTaggerApp:
 
     def choose_folder(self):
         folder_selected = filedialog.askdirectory()
+        self.process_selected_folder(folder_selected)
+
+    def process_selected_folder(self, folder_selected):
         if folder_selected:
             self.folder_path.set(folder_selected)
             self.reset_state()
@@ -584,6 +599,16 @@ class ImageTaggerApp:
             self.preview_image = None
             self.update_output(f"Selected folder: {folder_selected}")
             threading.Thread(target=self.load_files, daemon=True).start()
+
+    def on_drop(self, event):
+        if not event.data:
+            return
+        path = event.data
+        if path.startswith('{') and path.endswith('}'):
+            path = path[1:-1]
+        path = path.strip()
+        if os.path.isdir(path):
+            self.process_selected_folder(path)
 
     def reset_state(self):
         self.is_processing = False
@@ -927,7 +952,11 @@ class ImageTaggerApp:
 
 
 if __name__ == "__main__":
-    root = tb.Window(themename="flatly")
+    if TkinterDnD:
+        root = TkinterDnD.Tk()
+        tb.Style("flatly")
+    else:
+        root = tb.Window(themename="flatly")
     root.geometry("1200x700")  # Increased window size
     root.resizable(True, True)
     app = ImageTaggerApp(root)
