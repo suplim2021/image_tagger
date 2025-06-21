@@ -317,6 +317,12 @@ class ImageTaggerApp:
         self.thumbnail_size = (60, 60)  # Increased thumbnail size
         self.thumbnail_cache = {}
         self.preview_image = None
+        self.sort_reverse = {
+            "filename": False,
+            "title": False,
+            "tags": False,
+            "authors": False,
+        }
 
     def create_widgets(self):
         style = ttk.Style()
@@ -426,16 +432,28 @@ class ImageTaggerApp:
         self.tree.heading("#0", text="Thumbnail")
         self.tree.column("#0", width=130, stretch=tk.NO)  # Adjusted width for thumbnails
 
-        self.tree.heading("filename", text="Filename")
+        self.tree.heading(
+            "filename", text="Filename",
+            command=lambda: self.sort_tree("filename")
+        )
         self.tree.column("filename", width=150, stretch=tk.YES)
 
-        self.tree.heading("title", text="Title")
+        self.tree.heading(
+            "title", text="Title",
+            command=lambda: self.sort_tree("title")
+        )
         self.tree.column("title", width=150, stretch=tk.YES)
 
-        self.tree.heading("tags", text="Tags")
+        self.tree.heading(
+            "tags", text="Tags",
+            command=lambda: self.sort_tree("tags")
+        )
         self.tree.column("tags", width=180, stretch=tk.YES)
 
-        self.tree.heading("authors", text="Authors")
+        self.tree.heading(
+            "authors", text="Authors",
+            command=lambda: self.sort_tree("authors")
+        )
         self.tree.column("authors", width=80, stretch=tk.NO)
 
         self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -678,6 +696,27 @@ class ImageTaggerApp:
                 'even' if self.image_list[filename]["index"] % 2 == 0 else 'odd'
             ),
         )
+
+    def sort_tree(self, column):
+        """Sort treeview by the given column."""
+        reverse = self.sort_reverse.get(column, False)
+        data = []
+        for child in self.tree.get_children(''):
+            value = self.tree.set(child, column)
+            if isinstance(value, str):
+                value = value.lower()
+            data.append((value, child))
+
+        data.sort(reverse=reverse)
+
+        for index, (_, child) in enumerate(data):
+            self.tree.move(child, '', index)
+            tags = list(self.tree.item(child, 'tags'))
+            tags = [t for t in tags if t not in ('odd', 'even')]
+            tags.append('even' if (index + 1) % 2 == 0 else 'odd')
+            self.tree.item(child, tags=tuple(tags))
+
+        self.sort_reverse[column] = not reverse
 
     def validate_images_per_request(self):
         value = self.images_per_request.get()
