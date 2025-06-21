@@ -28,6 +28,9 @@ from ttkbootstrap.icons import Emoji
 
 VERSION = "1.2.4"
 
+# Store basic GUI settings between sessions
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
 
 def log_error(message, log_file="error_log.txt"):
     """Print error message and append it to a log file."""
@@ -269,6 +272,15 @@ class ImageTaggerApp:
         self.master = master
         master.title(f"Adobe Stock AI Keywording (Anthropic API) v{VERSION}")
 
+        self.config_file = SETTINGS_FILE
+        config = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception as e:  # pragma: no cover - read failures aren't fatal
+                log_error(f"Error loading settings: {e}")
+
         self.folder_path = tk.StringVar()
         self.is_processing = False
         self.is_paused = False
@@ -284,11 +296,12 @@ class ImageTaggerApp:
             "claude-3-5-haiku-latest",
             "claude-3-5-sonnet-latest"
         ]
-        self.selected_model = tk.StringVar(value=self.models[0])
+        default_model = config.get("selected_model", self.models[0])
+        self.selected_model = tk.StringVar(value=default_model)
 
-        self.max_workers = tk.IntVar(value=1)
-        self.images_per_request = tk.IntVar(value=1)
-        self.authors = tk.StringVar()
+        self.max_workers = tk.IntVar(value=config.get("max_workers", 1))
+        self.images_per_request = tk.IntVar(value=config.get("images_per_request", 1))
+        self.authors = tk.StringVar(value=config.get("authors", ""))
 
         self.start_time = None
         self.request_times = deque(maxlen=50)
@@ -303,6 +316,9 @@ class ImageTaggerApp:
         self.pause_icon = Emoji.get("double vertical bar") or "\u23F8"
         self.stop_icon = Emoji.get("black square for stop") or "\u23F9"
         self.trash_icon = Emoji.get("wastebasket") or "\U0001F5D1"
+
+        # Save settings when the window closes
+        self.master.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if DND_FILES is not None:
             try:
@@ -989,6 +1005,23 @@ class ImageTaggerApp:
 
         message = f"Task completed!\nTotal time: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
         messagebox.showinfo("Task Complete", message)
+
+    def save_settings(self):
+        data = {
+            "selected_model": self.selected_model.get(),
+            "max_workers": self.max_workers.get(),
+            "images_per_request": self.images_per_request.get(),
+            "authors": self.authors.get(),
+        }
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception as e:  # pragma: no cover - save failures aren't fatal
+            log_error(f"Error saving settings: {e}")
+
+    def on_close(self):
+        self.save_settings()
+        self.master.destroy()
 
 
 if __name__ == "__main__":
