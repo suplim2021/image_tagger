@@ -974,7 +974,8 @@ class ImageTaggerApp:
         image_path = os.path.join(self.folder_path.get(), filename)
         try:
             with Image.open(image_path) as img:
-                img.thumbnail((400, 400))
+                # Display a larger preview image
+                img.thumbnail((600, 600))
                 self.preview_image = ImageTk.PhotoImage(img)
                 self.preview_label.config(image=self.preview_image, text='')
         except Exception:
