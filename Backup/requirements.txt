@@ -1,0 +1,6 @@
+anthropic
+pillow
+piexif
+pyexiv2
+ttkbootstrap
+tkinterdnd2

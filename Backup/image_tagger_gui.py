@@ -4,7 +4,6 @@ import json
 import io
 from PIL import Image, ImageTk
 from PIL import PngImagePlugin
-from anthropic import RateLimitError
 import anthropic
 import concurrent.futures
 import piexif
@@ -63,17 +62,6 @@ if not API_KEY:
 
 client = anthropic.Anthropic(api_key=API_KEY)
 
-SYSTEM_PROMPT = (
-    "You are a popular AdobeStock contributor. "
-    "For each provided image, generate a title and exactly 49 relevant tags "
-    "optimized for Adobe Stock. Use simple, clear, and searchable words. "
-    "Sort tags by relevance, focusing on the subject's appearance, clothing, "
-    "action, setting, and mood. Avoid repetition and ensure the tags cover "
-    "key aspects like gender, age, ethnicity (if clear), posture, "
-    "accessories, and environment. Format the response as a JSON array "
-    "where each element corresponds to the input image order and contains "
-    "'title' and 'tags' keys."
-)
 
 def parse_json_content(content):
     """Parse JSON that may be wrapped in Markdown code fences and handle minor corruption."""
@@ -125,7 +113,6 @@ def get_thumbnail(image_path, max_size=(800, 800)):
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
     except Exception as e:
         print(f"Error creating thumbnail for {image_path}: {str(e)}")
-        log_error(f"Error creating thumbnail for {image_path}: {str(e)}")
         return None
 
 
@@ -166,7 +153,17 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
             model=model,
             max_tokens=4000,
             temperature=0,
-            system=SYSTEM_PROMPT,
+            system=(
+                "You are a popular AdobeStock contributor. "
+                "For each provided image, generate a title and exactly 49 relevant tags "
+                "optimized for Adobe Stock. Use simple, clear, and searchable words. "
+                "Sort tags by relevance, focusing on the subject's appearance, clothing, "
+                "action, setting, and mood. Avoid repetition and ensure the tags cover "
+                "key aspects like gender, age, ethnicity (if clear), posture, "
+                "accessories, and environment. Format the response as a JSON array "
+                "where each element corresponds to the input image order and contains "
+                "'title' and 'tags' keys."
+            ),
             messages=[{"role": "user", "content": messages_content}],
         )
 
@@ -197,8 +194,6 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
                 results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
 
         return results
-    except anthropic.RateLimitError:
-        raise  # Re-raise RateLimitError to be handled by the caller
     except Exception as e:
         log_error(f"Error processing batch {image_paths}: {str(e)}")
         for p in valid_paths:
@@ -275,7 +270,6 @@ def write_metadata(file_path, title, keywords, authors, clear_existing=False):
         return new_file_path
     except Exception as e:
         print(f"Error attaching metadata to {file_path}: {str(e)}")
-        log_error(f"Error attaching metadata to {file_path}: {str(e)}")
         return file_path
 
 
@@ -302,16 +296,14 @@ class ImageTaggerApp:
         self.error_count = 0
 
         self.models = [
+            "claude-sonnet-4-20250514",
+            "claude-3-7-sonnet-latest",
             "claude-3-5-sonnet-20241022",
-            "claude-3-5-sonnet-latest",
             "claude-3-5-haiku-latest",
+            "claude-3-5-sonnet-latest",
             "claude-haiku-4-5",
-            "claude-sonnet-4-6",
-            "claude-opus-4-6",
         ]
-        default_model = config.get("selected_model", "claude-haiku-4-5")
-        if default_model not in self.models:
-            default_model = "claude-haiku-4-5"
+        default_model = config.get("selected_model", self.models[0])
         self.selected_model = tk.StringVar(value=default_model)
 
         self.max_workers = tk.IntVar(value=config.get("max_workers", 1))
@@ -346,7 +338,6 @@ class ImageTaggerApp:
         self.thumbnail_cache = {}
         self._thumbnail_loading = set()
         self._thumbnail_waiters = {}
-        self.thumb_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
         self.preview_image = None
 
         self.create_widgets()
@@ -550,7 +541,7 @@ class ImageTaggerApp:
             data = self._create_thumbnail_data(image_path)
             self.master.after(0, lambda: self._apply_thumbnail(image_path, data))
 
-        self.thumb_executor.submit(worker)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _create_thumbnail_data(self, image_path):
         try:
@@ -567,7 +558,6 @@ class ImageTaggerApp:
                 return buffer.getvalue()
         except Exception as e:
             print(f"Error creating thumbnail for {image_path}: {str(e)}")
-            log_error(f"Error creating thumbnail data for {image_path}: {str(e)}")
             return None
 
     def _apply_thumbnail(self, image_path, data):
@@ -582,7 +572,6 @@ class ImageTaggerApp:
                 self.thumbnail_cache[image_path] = photo
             except Exception as exc:
                 print(f"Error finalizing thumbnail for {image_path}: {exc}")
-                log_error(f"Error finalizing thumbnail for {image_path}: {exc}")
                 photo = self.get_default_thumbnail()
         if not data:
             photo = self.get_default_thumbnail()
@@ -966,8 +955,8 @@ class ImageTaggerApp:
                 results = process_images_batch(image_paths, model, self.authors.get(), encoded_cache)
                 self.request_times.append(time.time())
                 return results
-            except RateLimitError as e:
-                # This is the specific exception for rate limits from the anthropic library
+            except Exception as e:
+                if "rate_limit_error" in str(e):
                     self.master.after(
                         0,
                         self.update_output,
@@ -984,7 +973,7 @@ class ImageTaggerApp:
                             for p in image_paths
                         }
                     self.request_times.clear()
-            except Exception as e:
+                else:
                     log_error(f"Error processing batch {image_paths}: {str(e)}")
                     for path in image_paths:
                         self.master.after(
@@ -1122,7 +1111,6 @@ class ImageTaggerApp:
 
     def on_close(self):
         self.save_settings()
-        self.thumb_executor.shutdown(wait=False)
         self.master.destroy()
 
 
