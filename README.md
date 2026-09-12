@@ -2,7 +2,7 @@
 
 Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
 
-## Version 1.2.7
+## Version 1.2.8
 
 
 ## Authorship Note
@@ -80,6 +80,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 - If you encounter rate limit errors, try reducing the number of concurrent workers.
 - For any "Unprocessed Image" results, check if the image content might be considered sensitive by the AI model.
 - All three selectable models (Haiku 4.5, Sonnet 5, Opus 5) work with any number of images per request -- if a batch fails, check the error text rather than assuming it's a multi-image limitation.
+- With multiple images in one request, each result is matched back to its file by an explicit 1-based `index` the model returns per item, not by the order results happen to come back in -- a batch is never assigned by position alone, so a reordered response can't silently mislabel the wrong file.
 
 ## Contributing
 

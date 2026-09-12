@@ -108,8 +108,13 @@ SYSTEM_PROMPT = (
     "keyword stuffing. "
     "Never include the words 'AI', 'AI-generated', 'generative AI', any "
     "model or tool name, or prompt-like phrasing in the title or tags. "
-    "Format the response as a JSON array where each element corresponds to "
-    "the input image order and contains 'title' and 'tags' keys."
+    "Format the response as a JSON array with exactly one element per image "
+    "provided, in any order. Each element must contain three keys: 'index' "
+    "(the 1-based position of that image among the ones provided in this "
+    "request -- the first image is 1, the second is 2, and so on), 'title', "
+    "and 'tags'. The index is mandatory and is how your answer gets matched "
+    "back to the correct file -- never omit it, never reuse the same index "
+    "twice, and never invent an index outside 1..N for N images provided."
 )
 
 # Tier 4: style/format descriptors that are true of every image this
@@ -247,24 +252,41 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
         image_data_list = parse_json_content(content)
         if image_data_list is None:
             log_error(f"Invalid JSON response for batch {valid_paths}: {content}")
-            image_data_list = [{} for _ in valid_paths]
+            image_data_list = []
 
         if not isinstance(image_data_list, list):
             image_data_list = [image_data_list]
 
-        for p, data in zip(valid_paths, image_data_list):
-            if not isinstance(data, dict) or "title" not in data or "tags" not in data:
-                data = {"title": "Unprocessed Image", "tags": ["unprocessed"]}
-            else:
-                data["tags"] = finalize_tags(data["tags"])
+        # Match each returned element back to its file by the 'index' field
+        # the model is required to include -- never by array position. A
+        # batch of several images sent in one request has no guarantee the
+        # model's answers come back in the same order it received them; a
+        # positional zip() would silently write the wrong title/tags onto
+        # the wrong file if the model ever reordered, and nothing would
+        # catch it (same count in, same count out looks fine either way).
+        by_index = {}
+        for data in image_data_list:
+            if not isinstance(data, dict):
+                continue
+            idx = data.get("index")
+            if not isinstance(idx, int) or not (1 <= idx <= len(valid_paths)):
+                log_error(f"Discarding response item with invalid index {idx!r} for batch {valid_paths}")
+                continue
+            if idx in by_index:
+                log_error(f"Discarding response item with duplicate index {idx} for batch {valid_paths}")
+                continue
+            by_index[idx] = data
+
+        for i, p in enumerate(valid_paths, start=1):
+            data = by_index.get(i)
+            if not data or "title" not in data or "tags" not in data:
+                results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
+                continue
+            data = dict(data)
+            data["tags"] = finalize_tags(data["tags"])
             data["authors"] = authors
             write_metadata(p, data["title"], data["tags"], data["authors"])
             results[p] = data
-
-        # For any valid_paths without returned data (API returned fewer items)
-        if len(image_data_list) < len(valid_paths):
-            for p in valid_paths[len(image_data_list):]:
-                results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
 
         return results
     except anthropic.RateLimitError:
