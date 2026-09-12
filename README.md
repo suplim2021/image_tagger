@@ -2,7 +2,7 @@
 
 Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
 
-## Version 1.2.4
+## Version 1.2.5
 
 
 ## Authorship Note
@@ -12,7 +12,10 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 ## Features
 
 - Bulk image processing (including PNG, JPG, JPEG, TIFF, BMP, and GIF support)
-- Automatic title and 49 tag generation using AI
+- Automatic title and 49 tag generation using AI, ordered by search
+  relevance (specific/differentiating terms first) with a fixed set of
+  high-traffic isolation/studio tags (isolated, white background, cutout,
+  etc.) guaranteed on every image rather than left to chance
 - Metadata (EXIF, IPTC, and XMP) insertion
 - Optionally clear existing metadata before adding new information
 - User-friendly GUI with thumbnail previews

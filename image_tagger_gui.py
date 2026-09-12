@@ -2,6 +2,8 @@ import os
 import base64
 import json
 import io
+import tempfile
+import traceback
 from PIL import Image, ImageTk
 from PIL import PngImagePlugin
 from anthropic import RateLimitError
@@ -65,15 +67,64 @@ client = anthropic.Anthropic(api_key=API_KEY)
 
 SYSTEM_PROMPT = (
     "You are a popular AdobeStock contributor. "
-    "For each provided image, generate a title and exactly 49 relevant tags "
-    "optimized for Adobe Stock. Use simple, clear, and searchable words. "
-    "Sort tags by relevance, focusing on the subject's appearance, clothing, "
-    "action, setting, and mood. Avoid repetition and ensure the tags cover "
-    "key aspects like gender, age, ethnicity (if clear), posture, "
-    "accessories, and environment. Format the response as a JSON array "
-    "where each element corresponds to the input image order and contains "
-    "'title' and 'tags' keys."
+    "For each provided image, generate a title and up to 42 relevant tags "
+    "optimized for Adobe Stock search ranking (a further set of fixed "
+    "studio/isolation tags is appended automatically after your response -- "
+    "do not include those yourself; see the excluded list below). "
+    "Use simple, clear, and searchable words, and order tags by search "
+    "relevance in this priority: "
+    "Tier 1 first -- the most specific, differentiating terms (profession "
+    "or role, the specific action/pose, distinctive props or objects) that "
+    "narrow-match a buyer's specific search and face less competition; "
+    "Tier 2 next -- people descriptors (gender, age range, expression/mood); "
+    "Tier 3 last -- setting/industry/context. "
+    "Avoid repetition and never pad the list with low-relevance filler tags "
+    "just to reach a target count. Only mention ethnicity, religion, "
+    "disability, or other sensitive attributes when they are unambiguous "
+    "from the image itself — never guess. "
+    "Do not include generic studio/isolation descriptors -- 'isolated', "
+    "'white background', 'cutout', 'cut out', 'studio shot', 'copy space', "
+    "'full length', 'one person' -- these are appended automatically by "
+    "code for every image and would otherwise be duplicated. "
+    "Keep the title under 70 characters, plain and descriptive, with no "
+    "keyword stuffing. "
+    "Never include the words 'AI', 'AI-generated', 'generative AI', any "
+    "model or tool name, or prompt-like phrasing in the title or tags. "
+    "Format the response as a JSON array where each element corresponds to "
+    "the input image order and contains 'title' and 'tags' keys."
 )
+
+# Tier 4: style/format descriptors that are true of every image this
+# pipeline produces (full-body, pure-white-background cutouts -- see
+# automate-stock-imagine's BOILERPLATE). These are high-traffic Adobe Stock
+# search/filter terms, but since every competing image shares them they
+# don't help ranking the way a specific Tier 1 term does -- appended after
+# the AI's own (more differentiating) tags rather than relying on the model
+# to remember them every time. Adjust/remove "one person" if a batch ever
+# includes multi-subject images (see CLAUDE.md's multi-character note in
+# the sibling automate-stock-imagine repo).
+FIXED_TRAILING_TAGS = [
+    "isolated",
+    "white background",
+    "cutout",
+    "studio shot",
+    "copy space",
+    "full length",
+    "one person",
+]
+
+MAX_TAGS = 49  # Adobe Stock's hard cap
+
+
+def finalize_tags(tags):
+    """Append the guaranteed Tier 4 tags, de-duplicated case-insensitively,
+    trimming the AI-generated portion (not the fixed tags) if needed to
+    stay within Adobe Stock's 49-tag limit.
+    """
+    seen = {t.strip().lower() for t in tags}
+    trailing = [t for t in FIXED_TRAILING_TAGS if t.lower() not in seen]
+    room = MAX_TAGS - len(trailing)
+    return list(tags[:max(room, 0)]) + trailing
 
 def parse_json_content(content):
     """Parse JSON that may be wrapped in Markdown code fences and handle minor corruption."""
@@ -187,6 +238,8 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
         for p, data in zip(valid_paths, image_data_list):
             if not isinstance(data, dict) or "title" not in data or "tags" not in data:
                 data = {"title": "Unprocessed Image", "tags": ["unprocessed"]}
+            else:
+                data["tags"] = finalize_tags(data["tags"])
             data["authors"] = authors
             write_metadata(p, data["title"], data["tags"], data["authors"])
             results[p] = data
@@ -209,6 +262,7 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
 def clear_metadata(file_path):
     """Remove all existing metadata from the image."""
     try:
+        file_path = os.path.normpath(file_path)
         with pyexiv2.Image(file_path) as img:
             img.clear_exif()
             img.clear_iptc()
@@ -220,22 +274,95 @@ def clear_metadata(file_path):
         print(f"Error clearing metadata from {file_path}: {str(e)}")
 
 
+def _describe_exception(e):
+    """Format an exception with errno/winerror for actionable log entries."""
+    parts = [f"{type(e).__name__}: {e}"]
+    errno_val = getattr(e, "errno", None)
+    winerror_val = getattr(e, "winerror", None)
+    if errno_val is not None:
+        parts.append(f"errno={errno_val}")
+    if winerror_val is not None:
+        parts.append(f"winerror={winerror_val}")
+    return " | ".join(parts)
+
+
+def _write_png_text_metadata(path, title, authors, keywords_str):
+    """Rewrite PNG text metadata without corrupting the file.
+
+    Reads the image fully into memory (closing the source handle) before
+    writing anywhere, preserves other existing text chunks and image info
+    (icc_profile/exif/dpi/transparency), writes to a temp file in the same
+    directory, validates it, then atomically replaces the original with
+    os.replace(). This avoids saving back onto a file PIL still has open
+    (a source of Windows file-locking errors) and avoids ever leaving a
+    half-written file at the real path if the process is interrupted.
+    """
+    path = os.path.normpath(path)
+    directory = os.path.dirname(path) or "."
+    overwrite_keys = {"Title", "Author", "Keywords", "Description"}
+
+    with Image.open(path) as src:
+        src.load()  # force full read now; nothing below touches `path` yet
+        meta = PngImagePlugin.PngInfo()
+        for key, value in getattr(src, "text", {}).items():
+            if key in overwrite_keys:
+                continue
+            if isinstance(value, PngImagePlugin.iTXt):
+                meta.add_itxt(key, str(value), lang=value.lang, tkey=value.tkey)
+            else:
+                meta.add_text(key, value)
+
+        meta.add_text("Title", title)
+        meta.add_text("Author", authors)
+        meta.add_text("Keywords", keywords_str)
+        meta.add_text("Description", title)
+
+        preserved_info = {
+            k: src.info[k]
+            for k in ("icc_profile", "exif", "dpi", "transparency")
+            if k in src.info
+        }
+        pixels = src.copy()
+
+    temp_path = None
+    try:
+        fd, temp_path = tempfile.mkstemp(
+            dir=directory,
+            prefix=f".{os.path.basename(path)}.",
+            suffix=".part",
+        )
+        with os.fdopen(fd, "wb") as out:
+            pixels.save(out, format="PNG", pnginfo=meta, **preserved_info)
+            out.flush()
+            os.fsync(out.fileno())
+
+        # Validate the temp file before it replaces the original.
+        with Image.open(temp_path) as check:
+            check.load()
+            if check.size != pixels.size or check.text.get("Title") != title:
+                raise ValueError("PNG metadata write validation failed")
+
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        pixels.close()
+        if temp_path is not None:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
 def write_metadata(file_path, title, keywords, authors, clear_existing=False):
     """Embed metadata directly into the given image file."""
     try:
-        new_file_path = file_path
+        new_file_path = os.path.normpath(file_path)
 
         if clear_existing:
             clear_metadata(new_file_path)
 
         if new_file_path.lower().endswith('.png'):
-            with Image.open(new_file_path) as im:
-                meta = PngImagePlugin.PngInfo()
-                meta.add_text("Title", title)
-                meta.add_text("Author", authors)
-                meta.add_text("Keywords", ", ".join(keywords))
-                meta.add_text("Description", title)
-                im.save(new_file_path, "PNG", pnginfo=meta)
+            _write_png_text_metadata(new_file_path, title, authors, ", ".join(keywords))
             with pyexiv2.Image(new_file_path) as img:
                 img.modify_xmp({
                     'Xmp.dc.title': title,
@@ -274,8 +401,12 @@ def write_metadata(file_path, title, keywords, authors, clear_existing=False):
         print(f"Metadata added to {new_file_path}")
         return new_file_path
     except Exception as e:
-        print(f"Error attaching metadata to {file_path}: {str(e)}")
-        log_error(f"Error attaching metadata to {file_path}: {str(e)}")
+        detail = _describe_exception(e)
+        print(f"Error attaching metadata to {file_path}: {detail}")
+        log_error(
+            f"Error attaching metadata to {file_path}: {detail}\n"
+            f"{traceback.format_exc()}"
+        )
         return file_path
 
 
@@ -302,12 +433,9 @@ class ImageTaggerApp:
         self.error_count = 0
 
         self.models = [
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-sonnet-latest",
-            "claude-3-5-haiku-latest",
             "claude-haiku-4-5",
-            "claude-sonnet-4-6",
-            "claude-opus-4-6",
+            "claude-sonnet-5",
+            "claude-opus-5",
         ]
         default_model = config.get("selected_model", "claude-haiku-4-5")
         if default_model not in self.models:
@@ -602,19 +730,31 @@ class ImageTaggerApp:
         self.tooltip_id = None
         self.last_motion_time = 0
         self.hide_delay = 3000  # 3 seconds in milliseconds
+        self.hover_value = None
+
+        def copy_hover_value(event):
+            if self.hover_value:
+                self.master.clipboard_clear()
+                self.master.clipboard_append(self.hover_value)
+                self.update_output(f"Copied: {self.hover_value[:50]}...")
+
+        self.tree.bind("<Control-c>", copy_hover_value)
 
         def show_tooltip(event):
             hide_tooltip()
             item = self.tree.identify_row(event.y)
             column = self.tree.identify_column(event.x)
+            self.hover_value = None
             if item and column:
                 values = self.tree.item(item)['values']
                 column_name = self.tree.heading(column)['text']
                 if column == '#0':
                     value = values[0] if values else ""
+                    self.hover_value = value
                 else:
                     idx = int(column[1:]) - 1
                     value = f"{column_name}: {values[idx]}" if idx < len(values) else ""
+                    self.hover_value = value
 
                 bbox = self.tree.bbox(item, column)
                 if not bbox:
