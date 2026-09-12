@@ -1,18 +1,22 @@
 import importlib
-import os
-from pathlib import Path
 
 import pytest
 
-# Ensure a temporary API key file exists so the module can be imported
-ROOT = Path(__file__).resolve().parents[1]
-API_KEY_FILE = ROOT / "api_key.txt"
 
 @pytest.fixture(autouse=True)
-def _create_api_key():
-    API_KEY_FILE.write_text("dummy")
+def _fake_api_key(monkeypatch):
+    """Let image_tagger_gui import without a real key configured.
+
+    Sets an OS env var rather than writing/deleting a .env file on disk --
+    a file-based fixture would risk clobbering (and then permanently
+    deleting) a developer's real .env if one exists in the project root.
+    load_env() only falls back to this env var when .env doesn't already
+    define ANTHROPIC_API_KEY, so a real .env present locally still wins
+    here, which is harmless since this module-level import never makes an
+    actual API call.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy")
     yield
-    API_KEY_FILE.unlink()
 
 
 @pytest.fixture

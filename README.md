@@ -2,7 +2,7 @@
 
 Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
 
-## Version 1.2.5
+## Version 1.2.6
 
 
 ## Authorship Note
@@ -45,7 +45,11 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
    pip install -r requirements.txt
    ```
 
-3. Create a file named `api_key.txt` in the root directory and paste your Anthropic API key into it.
+3. Create a file named `.env` in the root directory (next to `image_tagger_gui.py`) with:
+   ```
+   ANTHROPIC_API_KEY=your-anthropic-key-here
+   ```
+   (Reuse the same key the sibling `automate-stock-imagine` project's `.env` uses, if you already have one.) `.env` is gitignored, same as the old `api_key.txt` was.
 
 ## Usage
 

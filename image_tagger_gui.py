@@ -4,6 +4,7 @@ import json
 import io
 import tempfile
 import traceback
+from pathlib import Path
 from PIL import Image, ImageTk
 from PIL import PngImagePlugin
 from anthropic import RateLimitError
@@ -47,21 +48,38 @@ def log_error(message, log_file="error_log.txt"):
         print(f"Failed to write to log file: {e}")
 
 
-def load_api_key(file_path='api_key.txt'):
-    try:
-        with open(file_path, 'r') as file:
-            return file.read().strip()
-    except FileNotFoundError:
-        print(f"API key file not found: {file_path}")
-        return None
-    except Exception as e:
-        print(f"Error reading API key: {str(e)}")
-        return None
+SCRIPT_DIR = Path(__file__).resolve().parent
+ENV_PATH = SCRIPT_DIR / ".env"
 
 
-API_KEY = load_api_key()
+def load_env() -> dict:
+    """Load KEY=value pairs from .env next to this script.
+
+    Resolved via __file__, not the process's current working directory --
+    the old api_key.txt loader used a bare relative path, which silently
+    failed depending on where/how the script was launched from (double-click,
+    a shortcut, an IDE's run button, etc. don't all set cwd to the script's
+    own folder). A missing .env falls back to a real OS environment
+    variable of the same name, then to empty.
+    """
+    values = {}
+    if ENV_PATH.exists():
+        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            values[k.strip()] = v.strip()
+    values.setdefault("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", ""))
+    return values
+
+
+API_KEY = load_env().get("ANTHROPIC_API_KEY", "")
 if not API_KEY:
-    raise ValueError("Failed to load API key. Please ensure 'api_key.txt' exists in the same directory as this script.")
+    raise ValueError(
+        f"ANTHROPIC_API_KEY is empty -- create a .env file at {ENV_PATH} "
+        f"with a line like:\nANTHROPIC_API_KEY=sk-ant-your-key-here"
+    )
 
 client = anthropic.Anthropic(api_key=API_KEY)
 
