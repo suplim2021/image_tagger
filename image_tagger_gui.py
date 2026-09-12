@@ -30,7 +30,7 @@ import warnings
 import textwrap
 from ttkbootstrap.icons import Emoji
 
-VERSION = "1.2.4"
+VERSION = "1.2.8"
 
 # Store basic GUI settings between sessions
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
@@ -85,21 +85,34 @@ client = anthropic.Anthropic(api_key=API_KEY)
 
 SYSTEM_PROMPT = (
     "You are a popular AdobeStock contributor. "
-    "For each provided image, generate a title and up to 42 relevant tags "
+    "For each provided image, generate a title and EXACTLY 42 relevant tags "
     "optimized for Adobe Stock search ranking (a further set of fixed "
-    "studio/isolation tags is appended automatically after your response -- "
-    "do not include those yourself; see the excluded list below). "
+    "studio/isolation tags is appended automatically after your response, "
+    "bringing the total to Adobe Stock's 49-tag cap -- do not include those "
+    "yourself; see the excluded list below). Adobe Stock buyers search with "
+    "many different words for the same image, so more distinct, genuinely "
+    "applicable tags means more ways to be found -- treat 42 as the target, "
+    "not a ceiling to stop short of. "
     "Use simple, clear, and searchable words, and order tags by search "
     "relevance in this priority: "
-    "Tier 1 first -- the most specific, differentiating terms (profession "
-    "or role, the specific action/pose, distinctive props or objects) that "
+    "Tier 1 -- the most specific, differentiating terms (profession or "
+    "role, the specific action/pose, distinctive props or objects) that "
     "narrow-match a buyer's specific search and face less competition; "
-    "Tier 2 next -- people descriptors (gender, age range, expression/mood); "
-    "Tier 3 last -- setting/industry/context. "
-    "Avoid repetition and never pad the list with low-relevance filler tags "
-    "just to reach a target count. Only mention ethnicity, religion, "
-    "disability, or other sensitive attributes when they are unambiguous "
-    "from the image itself — never guess. "
+    "Tier 2 -- people descriptors (gender, age range, expression/mood); "
+    "Tier 3 -- setting/industry/context; "
+    "Tier 4 -- to legitimately reach 42, also mine: synonyms and "
+    "alternate phrasings a buyer might type for the same subject/action, "
+    "abstract concept/emotion keywords the image evokes (e.g. success, "
+    "teamwork, leadership, confidence, growth, innovation, motivation -- "
+    "whichever genuinely fit), plausible commercial use cases (e.g. "
+    "presentation, website banner, advertisement, brochure), and visual "
+    "attributes (color palette, composition, clothing/style details). "
+    "Every tag must still be something a person would plausibly search for "
+    "and that genuinely applies to this specific image -- do not invent "
+    "attributes that aren't visible, and do not repeat the same idea in "
+    "near-identical words just to pad the count. Only mention ethnicity, "
+    "religion, disability, or other sensitive attributes when they are "
+    "unambiguous from the image itself — never guess. "
     "Do not include generic studio/isolation descriptors -- 'isolated', "
     "'white background', 'cutout', 'cut out', 'studio shot', 'copy space', "
     "'full length', 'one person' -- these are appended automatically by "
@@ -112,9 +125,10 @@ SYSTEM_PROMPT = (
     "provided, in any order. Each element must contain three keys: 'index' "
     "(the 1-based position of that image among the ones provided in this "
     "request -- the first image is 1, the second is 2, and so on), 'title', "
-    "and 'tags'. The index is mandatory and is how your answer gets matched "
-    "back to the correct file -- never omit it, never reuse the same index "
-    "twice, and never invent an index outside 1..N for N images provided."
+    "and 'tags' (an array of exactly 42 strings). The index is mandatory "
+    "and is how your answer gets matched back to the correct file -- never "
+    "omit it, never reuse the same index twice, and never invent an index "
+    "outside 1..N for N images provided."
 )
 
 # Tier 4: style/format descriptors that are true of every image this
@@ -527,7 +541,10 @@ class ImageTaggerApp:
         }
 
     def create_widgets(self):
-        style = ttk.Style()
+        # tb.Style() (not ttk.Style()) returns the ttkbootstrap singleton
+        # created at startup, which is what exposes .colors for the
+        # theme-derived Treeview row/status tints below.
+        style = tb.Style()
         style.configure("Large.Treeview", rowheight=self.thumbnail_size[1] + 12)
         style.configure("Large.Treeview.Heading", padding=(6, 4))
 
@@ -585,10 +602,15 @@ class ImageTaggerApp:
         # Control buttons with emoji icons
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=2, column=0, columnspan=3, pady=10)
+        # Semantic bootstyles give each action its own role in the same
+        # vocabulary the rest of ttkbootstrap already uses (success = go,
+        # warning = caution/reversible, danger = stop/destructive) instead
+        # of every button reading identically regardless of what it does.
         self.start_button = ttk.Button(
             button_frame,
             text=f"{self.play_icon} Start",
             command=self.start_processing,
+            bootstyle="success",
         )
         self.start_button.pack(side=tk.LEFT, padx=5)
         self.pause_button = ttk.Button(
@@ -596,6 +618,7 @@ class ImageTaggerApp:
             text=f"{self.pause_icon} Pause",
             command=self.toggle_pause,
             state=tk.DISABLED,
+            bootstyle="warning",
         )
         self.pause_button.pack(side=tk.LEFT, padx=5)
         self.stop_button = ttk.Button(
@@ -603,6 +626,7 @@ class ImageTaggerApp:
             text=f"{self.stop_icon} Stop",
             command=self.stop_processing,
             state=tk.DISABLED,
+            bootstyle="danger",
         )
         self.stop_button.pack(side=tk.LEFT, padx=5)
         self.clear_button = ttk.Button(
@@ -610,13 +634,14 @@ class ImageTaggerApp:
             text=f"{self.trash_icon} Clear Metadata",
             command=self.clear_all_metadata,
             state=tk.DISABLED,
+            bootstyle="danger-outline",
         )
         self.clear_button.pack(side=tk.LEFT, padx=5)
 
         # Progress and stats
         progress_frame = ttk.Frame(main_frame)
         progress_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
-        self.progress = ttk.Progressbar(progress_frame, length=300, mode='determinate')
+        self.progress = ttk.Progressbar(progress_frame, length=300, mode='determinate', bootstyle="success")
         self.progress.pack(side=tk.LEFT, padx=5)
         self.stats_label = ttk.Label(progress_frame, text="Success: 0 | Error: 0")
         self.stats_label.pack(side=tk.LEFT, padx=5)
@@ -675,12 +700,14 @@ class ImageTaggerApp:
         hsb.grid(row=1, column=0, sticky=(tk.W, tk.E))
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        # Alternating row colors
-        self.tree.tag_configure('odd', background='#F0F0F0')
-        self.tree.tag_configure('even', background='#FFFFFF')
-        # Result status colors
-        self.tree.tag_configure('Success', background='#CCFFCC')
-        self.tree.tag_configure('Error', background='#FFCCCC')
+        # Alternating row colors and result-status tints are derived from the
+        # active ttkbootstrap theme's own palette (not hardcoded hex) so they
+        # stay coherent if the theme is ever changed.
+        colors = style.colors
+        self.tree.tag_configure('odd', background=colors.light)
+        self.tree.tag_configure('even', background=colors.bg)
+        self.tree.tag_configure('Success', background=colors.update_hsv(colors.success, vd=0.35))
+        self.tree.tag_configure('Error', background=colors.update_hsv(colors.danger, vd=0.35))
 
         # Bind selection event to show preview
         self.tree.bind('<<TreeviewSelect>>', self.show_preview)
@@ -690,8 +717,10 @@ class ImageTaggerApp:
         self.preview_label.grid(row=5, column=0, columnspan=3, pady=5)
 
         # Status bar
-        self.status_bar = ttk.Label(main_frame, text="", relief=tk.SUNKEN, anchor=tk.W)
-        self.status_bar.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E))
+        self.status_bar = ttk.Label(
+            main_frame, text="", anchor=tk.W, bootstyle="secondary-inverse", padding=(8, 4)
+        )
+        self.status_bar.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(5, 0))
 
         # Configure main_frame and tree_frame to expand
         main_frame.columnconfigure(0, weight=1)
@@ -815,10 +844,11 @@ class ImageTaggerApp:
                         photo = None
 
                     if photo:
+                        tooltip_bg = tb.Style().colors.light
                         label = tk.Label(
                             self.tooltip,
                             image=photo,
-                            background="#ffffe0",
+                            background=tooltip_bg,
                             relief=tk.SOLID,
                             borderwidth=1,
                         )
@@ -831,7 +861,7 @@ class ImageTaggerApp:
                         self.tooltip,
                         text=wrapped_text,
                         justify=tk.LEFT,
-                        background="#ffffe0",
+                        background=tb.Style().colors.light,
                         relief=tk.SOLID,
                         borderwidth=1,
                         font=("tahoma", "8", "normal"),

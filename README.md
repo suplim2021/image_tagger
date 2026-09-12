@@ -2,7 +2,7 @@
 
 Image Tagger is a Python application that uses the Anthropic Claude API to automatically generate titles and tags for images. It processes images in bulk, adding metadata (EXIF, IPTC, and XMP) to each image file.
 
-## Version 1.2.8
+## Version 1.2.9
 
 
 ## Authorship Note
@@ -12,10 +12,11 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 ## Features
 
 - Bulk image processing (including PNG, JPG, JPEG, TIFF, BMP, and GIF support)
-- Automatic title and 49 tag generation using AI, ordered by search
-  relevance (specific/differentiating terms first) with a fixed set of
-  high-traffic isolation/studio tags (isolated, white background, cutout,
-  etc.) guaranteed on every image rather than left to chance
+- Automatic title and tag generation using AI, ordered by search relevance
+  (specific/differentiating terms first), targeting exactly 42 AI-generated
+  tags plus a fixed set of 7 high-traffic isolation/studio tags (isolated,
+  white background, cutout, etc.) guaranteed on every image -- 49 total,
+  Adobe Stock's cap
 - Metadata (EXIF, IPTC, and XMP) insertion
 - Optionally clear existing metadata before adding new information
 - User-friendly GUI with thumbnail previews
@@ -81,6 +82,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 - For any "Unprocessed Image" results, check if the image content might be considered sensitive by the AI model.
 - All three selectable models (Haiku 4.5, Sonnet 5, Opus 5) work with any number of images per request -- if a batch fails, check the error text rather than assuming it's a multi-image limitation.
 - With multiple images in one request, each result is matched back to its file by an explicit 1-based `index` the model returns per item, not by the order results happen to come back in -- a batch is never assigned by position alone, so a reordered response can't silently mislabel the wrong file.
+- If tag counts come back noticeably under 42 (e.g. ~20), that used to be the model legitimately choosing not to pad -- the prompt was tightened in 1.2.9 to target exactly 42 rather than treating it as a ceiling; verified live to return 42/42 on a real image.
 
 ## Contributing
 
