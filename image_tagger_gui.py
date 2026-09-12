@@ -234,12 +234,11 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
         response = client.messages.create(
             model=model,
             max_tokens=4000,
-            temperature=0,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": messages_content}],
         )
 
-        content = response.content[0].text if response.content else None
+        content = next((b.text for b in response.content if b.type == "text"), None)
         if not content:
             for p in valid_paths:
                 results[p] = {"title": "Unprocessed Image", "tags": ["unprocessed"], "authors": authors}
