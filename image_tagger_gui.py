@@ -34,6 +34,29 @@ VERSION = "1.2.8"
 
 # Store basic GUI settings between sessions
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+# All-time API spend, kept apart from settings.json so the tracked config
+# file doesn't churn every run.
+USAGE_FILE = os.path.join(os.path.dirname(__file__), "usage_stats.json")
+
+# USD per million tokens (input, output). Output includes thinking tokens.
+# Haiku 5.5's rate applies to prompts up to 100K tokens, which a handful of
+# thumbnails never approaches.
+MODEL_PRICING = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+}
+
+
+def estimate_cost(model, input_tokens, output_tokens):
+    """Return the USD cost of one request, or 0.0 for an unpriced model."""
+    in_rate, out_rate = MODEL_PRICING.get(model, (0.0, 0.0))
+    return (input_tokens * in_rate + output_tokens * out_rate) / 1_000_000
+
+
+def format_cost(amount):
+    """Show sub-dollar amounts with enough precision to see per-image cost."""
+    return f"${amount:,.4f}" if amount < 1 else f"${amount:,.2f}"
 
 
 def log_error(message, log_file="error_log.txt"):
@@ -217,8 +240,13 @@ def get_thumbnail(image_path, max_size=(800, 800)):
         return None
 
 
-def process_images_batch(image_paths, model, authors, encoded_cache=None):
-    """Process a batch of images in a single Claude request."""
+def process_images_batch(image_paths, model, authors, encoded_cache=None, on_usage=None):
+    """Process a batch of images in a single Claude request.
+
+    on_usage, if given, is called as on_usage(input_tokens, output_tokens)
+    once the API responds -- before parsing, since a response that fails to
+    parse is still billed.
+    """
     messages_content = []
     valid_paths = []
     results = {}
@@ -258,6 +286,12 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": messages_content}],
         )
+
+        if on_usage is not None:
+            try:
+                on_usage(response.usage.input_tokens, response.usage.output_tokens)
+            except Exception as e:  # cost tracking must never fail a batch
+                log_error(f"Error recording usage: {e}")
 
         content = next((b.text for b in response.content if b.type == "text"), None)
         if not content:
@@ -487,6 +521,11 @@ class ImageTaggerApp:
         self.ok_count = 0
         self.error_count = 0
 
+        # Workers report usage from their own threads.
+        self.cost_lock = threading.Lock()
+        self.run_cost = 0.0
+        self.total_cost = self.load_total_cost()
+
         self.models = [
             "claude-haiku-5-5",
             "claude-sonnet-5-5",
@@ -649,6 +688,12 @@ class ImageTaggerApp:
         self.stats_label.pack(side=tk.LEFT, padx=5)
         self.time_label = ttk.Label(progress_frame, text="Estimated: --:--:--")
         self.time_label.pack(side=tk.LEFT, padx=5)
+        self.cost_label = ttk.Label(
+            progress_frame,
+            font=("Segoe UI", 11, "bold"),
+            bootstyle="info",
+        )
+        self.cost_label.pack(side=tk.RIGHT, padx=10)
 
         # Treeview
         tree_frame = ttk.Frame(main_frame)
@@ -939,6 +984,7 @@ class ImageTaggerApp:
             del self._default_thumbnail
         self.progress['value'] = 0
         self.update_stats()
+        self.update_cost_label()
         self.time_label.config(text="Estimated: --:--:--")
         self.start_button.config(state=tk.NORMAL, text=f"{self.play_icon} Start")
         self.pause_button.config(state=tk.DISABLED, text=f"{self.pause_icon} Pause")
@@ -1046,6 +1092,9 @@ class ImageTaggerApp:
         self.processed_images = 0
         self.ok_count = 0
         self.error_count = 0
+        with self.cost_lock:
+            self.run_cost = 0.0
+        self.update_cost_label()
 
         self.update_output("Starting processing...")
         threading.Thread(target=self.process_images, daemon=True).start()
@@ -1174,7 +1223,13 @@ class ImageTaggerApp:
                     continue
 
             try:
-                results = process_images_batch(image_paths, model, self.authors.get(), encoded_cache)
+                results = process_images_batch(
+                    image_paths,
+                    model,
+                    self.authors.get(),
+                    encoded_cache,
+                    on_usage=lambda i, o: self.record_usage(model, i, o),
+                )
                 self.request_times.append(time.time())
                 return results
             except RateLimitError as e:
@@ -1241,8 +1296,51 @@ class ImageTaggerApp:
         self.progress['value'] = self.processed_images
         self.update_stats()
         self.update_time_estimate()
+        self.update_cost_label()
+
+    def record_usage(self, model, input_tokens, output_tokens):
+        """Add one request's cost to the run and all-time totals (any thread)."""
+        cost = estimate_cost(model, input_tokens, output_tokens)
+        with self.cost_lock:
+            self.run_cost += cost
+            self.total_cost += cost
+        self.master.after(0, self.update_cost_label)
+
+    def update_cost_label(self):
+        with self.cost_lock:
+            run_cost, total_cost = self.run_cost, self.total_cost
+        text = f"Run: {format_cost(run_cost)}"
+        if self.processed_images > 0 and run_cost > 0:
+            per_image = run_cost / self.processed_images
+            text += (
+                f" · {format_cost(per_image)}/img"
+                f" · est. {format_cost(per_image * self.total_images)}"
+            )
+        text += f"  |  All-time: {format_cost(total_cost)}"
+        self.cost_label.config(text=text)
+
+    def load_total_cost(self):
+        try:
+            with open(USAGE_FILE, "r", encoding="utf-8") as f:
+                return float(json.load(f).get("total_cost_usd", 0.0))
+        except FileNotFoundError:
+            return 0.0
+        except Exception as e:  # a corrupt file shouldn't block startup
+            log_error(f"Error loading usage stats: {e}")
+            return 0.0
+
+    def save_total_cost(self):
+        with self.cost_lock:
+            total_cost = self.total_cost
+        try:
+            with open(USAGE_FILE, "w", encoding="utf-8") as f:
+                json.dump({"total_cost_usd": total_cost}, f)
+        except Exception as e:  # pragma: no cover - save failures aren't fatal
+            log_error(f"Error saving usage stats: {e}")
 
     def finalize_processing(self):
+        self.save_total_cost()
+        self.update_cost_label()
         self.is_processing = False
         self.start_button.config(state=tk.NORMAL)
         self.pause_button.config(state=tk.DISABLED, text=f"{self.pause_icon} Pause")
@@ -1315,7 +1413,13 @@ class ImageTaggerApp:
         hours, rem = divmod(elapsed_time, 3600)
         minutes, seconds = divmod(rem, 60)
 
-        message = f"Task completed!\nTotal time: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+        with self.cost_lock:
+            run_cost, total_cost = self.run_cost, self.total_cost
+        message = (
+            f"Task completed!\nTotal time: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}\n"
+            f"Cost this run: {format_cost(run_cost)}\n"
+            f"All-time cost: {format_cost(total_cost)}"
+        )
         messagebox.showinfo("Task Complete", message)
 
     def save_settings(self):
@@ -1333,6 +1437,7 @@ class ImageTaggerApp:
 
     def on_close(self):
         self.save_settings()
+        self.save_total_cost()
         self.thumb_executor.shutdown(wait=False)
         self.master.destroy()
 

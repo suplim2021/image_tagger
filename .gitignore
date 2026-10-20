@@ -2,3 +2,5 @@ venv/
 .env
 api_key.txt
 error_log.txt
+usage_stats.json
+__pycache__/
