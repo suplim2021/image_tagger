@@ -252,7 +252,9 @@ def process_images_batch(image_paths, model, authors, encoded_cache=None):
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=4000,
+            # 5.5-generation models think by default and thinking tokens count
+            # against max_tokens, so leave headroom for multi-image batches.
+            max_tokens=16000,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": messages_content}],
         )
@@ -486,13 +488,13 @@ class ImageTaggerApp:
         self.error_count = 0
 
         self.models = [
-            "claude-haiku-4-5",
-            "claude-sonnet-5",
-            "claude-opus-5",
+            "claude-haiku-5-5",
+            "claude-sonnet-5-5",
+            "claude-opus-5-5",
         ]
-        default_model = config.get("selected_model", "claude-haiku-4-5")
+        default_model = config.get("selected_model", "claude-haiku-5-5")
         if default_model not in self.models:
-            default_model = "claude-haiku-4-5"
+            default_model = "claude-haiku-5-5"
         self.selected_model = tk.StringVar(value=default_model)
 
         self.max_workers = tk.IntVar(value=config.get("max_workers", 1))

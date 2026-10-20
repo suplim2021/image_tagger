@@ -80,7 +80,7 @@ This code was written by an AI assistant (Claude) based on ideas and requirement
 
 - If you encounter rate limit errors, try reducing the number of concurrent workers.
 - For any "Unprocessed Image" results, check if the image content might be considered sensitive by the AI model.
-- All three selectable models (Haiku 4.5, Sonnet 5, Opus 5) work with any number of images per request -- if a batch fails, check the error text rather than assuming it's a multi-image limitation.
+- All three selectable models (Haiku 5.5, Sonnet 5.5, Opus 5.5) work with any number of images per request -- if a batch fails, check the error text rather than assuming it's a multi-image limitation.
 - With multiple images in one request, each result is matched back to its file by an explicit 1-based `index` the model returns per item, not by the order results happen to come back in -- a batch is never assigned by position alone, so a reordered response can't silently mislabel the wrong file.
 - If tag counts come back noticeably under 42 (e.g. ~20), that used to be the model legitimately choosing not to pad -- the prompt was tightened in 1.2.9 to target exactly 42 rather than treating it as a ceiling; verified live to return 42/42 on a real image.
 
